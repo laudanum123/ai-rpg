@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AI Game Master RPG{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1 class="logo">AI Game Master RPG</h1>
+            <nav>
+                <ul>
+                    <li><a href="{{ url_for('main.index') }}">Home</a></li>
+                    {% if session.get('character_id') %}
+                        <li><a href="{{ url_for('main.game') }}">Continue Game</a></li>
+                        <li><a href="{{ url_for('main.character_sheet') }}">Character Sheet</a></li>
+                        <li><a href="{{ url_for('main.logout') }}">New Game</a></li>
+                    {% else %}
+                        <li><a href="{{ url_for('main.new_character') }}">New Game</a></li>
+                    {% endif %}
+                    <li><a href="{{ url_for('main.debug') }}">API Debug</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <div class="container">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; {{ now.year }} AI Game Master RPG</p>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html> 

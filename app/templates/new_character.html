@@ -1,0 +1,185 @@
+{% extends 'base.html' %}
+
+{% block title %}Create Your Character{% endblock %}
+
+{% block content %}
+<div class="character-creation">
+    <h1>Create Your Character</h1>
+    
+    <form method="POST" class="character-form">
+        <div class="form-group">
+            <label for="name">Character Name</label>
+            <input type="text" id="name" name="name" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="character_class">Character Class</label>
+            <select id="character_class" name="character_class" required>
+                <option value="" disabled selected>Select a class</option>
+                <option value="fighter">Fighter</option>
+                <option value="wizard">Wizard</option>
+                <option value="rogue">Rogue</option>
+            </select>
+        </div>
+        
+        <div class="class-description">
+            <div id="fighter-desc" class="class-details">
+                <h3>Fighter</h3>
+                <p>Masters of martial combat, fighters are skilled with weapons and armor. They are tough and can withstand significant damage.</p>
+                <ul>
+                    <li>+2 Strength, +1 Constitution</li>
+                    <li>Extra health points</li>
+                    <li>Starts with a longsword and shield</li>
+                    <li>Special ability: Second Wind</li>
+                </ul>
+            </div>
+            <div id="wizard-desc" class="class-details">
+                <h3>Wizard</h3>
+                <p>Scholars of arcane magic, wizards can cast powerful spells to defeat enemies and solve problems.</p>
+                <ul>
+                    <li>+2 Intelligence, +1 Wisdom</li>
+                    <li>Starts with a staff and spellbook</li>
+                    <li>Can learn and cast various spells</li>
+                    <li>Special ability: Arcane Recovery</li>
+                </ul>
+            </div>
+            <div id="rogue-desc" class="class-details">
+                <h3>Rogue</h3>
+                <p>Masters of stealth and precision, rogues excel at finding and disabling traps, picking locks, and striking vulnerable targets.</p>
+                <ul>
+                    <li>+2 Dexterity, +1 Charisma</li>
+                    <li>Starts with a dagger and thieves' tools</li>
+                    <li>Skilled at stealth and deception</li>
+                    <li>Special ability: Sneak Attack</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label for="game_world">Game World</label>
+            <select id="game_world" name="game_world">
+                <option value="Fantasy">Classic Fantasy</option>
+                <option value="Dark Fantasy">Dark Fantasy</option>
+                <option value="Steampunk">Steampunk</option>
+            </select>
+        </div>
+        
+        <div class="form-actions">
+            <button type="submit" class="create-button">Create & Start Adventure</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const classSelect = document.getElementById('character_class');
+        const fighterDesc = document.getElementById('fighter-desc');
+        const wizardDesc = document.getElementById('wizard-desc');
+        const rogueDesc = document.getElementById('rogue-desc');
+        
+        // Hide all descriptions initially
+        fighterDesc.style.display = 'none';
+        wizardDesc.style.display = 'none';
+        rogueDesc.style.display = 'none';
+        
+        classSelect.addEventListener('change', function() {
+            // Hide all descriptions
+            fighterDesc.style.display = 'none';
+            wizardDesc.style.display = 'none';
+            rogueDesc.style.display = 'none';
+            
+            // Show selected class description
+            if (this.value === 'fighter') {
+                fighterDesc.style.display = 'block';
+            } else if (this.value === 'wizard') {
+                wizardDesc.style.display = 'block';
+            } else if (this.value === 'rogue') {
+                rogueDesc.style.display = 'block';
+            }
+        });
+    });
+</script>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .character-creation {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem;
+        background: #f5f5f5;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    .character-creation h1 {
+        text-align: center;
+        margin-bottom: 2rem;
+        color: #5d4037;
+    }
+    
+    .character-form {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+    
+    .form-group {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .form-group label {
+        margin-bottom: 0.5rem;
+        font-weight: bold;
+    }
+    
+    .form-group input,
+    .form-group select {
+        padding: 0.75rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 1rem;
+    }
+    
+    .class-description {
+        margin: 1rem 0;
+        padding: 1rem;
+        background: #fff;
+        border-radius: 4px;
+        border-left: 4px solid #5d4037;
+    }
+    
+    .class-details h3 {
+        color: #5d4037;
+        margin-top: 0;
+    }
+    
+    .class-details ul {
+        padding-left: 1.5rem;
+    }
+    
+    .form-actions {
+        margin-top: 1rem;
+        text-align: center;
+    }
+    
+    .create-button {
+        padding: 1rem 2rem;
+        background: #5d4037;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 1.1rem;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background 0.3s;
+    }
+    
+    .create-button:hover {
+        background: #3e2723;
+    }
+</style>
+{% endblock %} 

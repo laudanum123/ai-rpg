@@ -1,0 +1,357 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ character.name }}'s Character Sheet{% endblock %}
+
+{% block content %}
+<div class="character-sheet-container">
+    <h1 class="character-sheet-title">Character Sheet</h1>
+    
+    <div class="character-sheet">
+        <div class="character-header">
+            <div class="character-identity">
+                <h2 class="character-name">{{ character.name }}</h2>
+                <div class="character-meta">
+                    Level {{ character.level }} {{ character.character_class|title }}
+                </div>
+            </div>
+            
+            <div class="character-portrait">
+                {% if character.character_class == 'fighter' %}
+                    <span class="portrait-icon">⚔️</span>
+                {% elif character.character_class == 'wizard' %}
+                    <span class="portrait-icon">🧙</span>
+                {% elif character.character_class == 'rogue' %}
+                    <span class="portrait-icon">🗡️</span>
+                {% else %}
+                    <span class="portrait-icon">🧝</span>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="sheet-section">
+            <h3 class="section-title">Basic Information</h3>
+            <div class="info-grid">
+                <div class="info-item">
+                    <label>Level</label>
+                    <span>{{ character.level }}</span>
+                </div>
+                <div class="info-item">
+                    <label>Experience</label>
+                    <span>{{ character.experience }}/{{ character.level * 100 }}</span>
+                </div>
+                <div class="info-item">
+                    <label>Health</label>
+                    <span>{{ character.health }}/{{ character.max_health }}</span>
+                </div>
+                <div class="info-item">
+                    <label>Gold</label>
+                    <span>{{ character.gold }}</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="sheet-section">
+            <h3 class="section-title">Attributes</h3>
+            <div class="attributes-grid">
+                <div class="attribute">
+                    <div class="attribute-name">Strength</div>
+                    <div class="attribute-value">{{ character.strength }}</div>
+                    <div class="attribute-modifier">{{ (character.strength - 10) // 2 }}</div>
+                </div>
+                <div class="attribute">
+                    <div class="attribute-name">Dexterity</div>
+                    <div class="attribute-value">{{ character.dexterity }}</div>
+                    <div class="attribute-modifier">{{ (character.dexterity - 10) // 2 }}</div>
+                </div>
+                <div class="attribute">
+                    <div class="attribute-name">Constitution</div>
+                    <div class="attribute-value">{{ character.constitution }}</div>
+                    <div class="attribute-modifier">{{ (character.constitution - 10) // 2 }}</div>
+                </div>
+                <div class="attribute">
+                    <div class="attribute-name">Intelligence</div>
+                    <div class="attribute-value">{{ character.intelligence }}</div>
+                    <div class="attribute-modifier">{{ (character.intelligence - 10) // 2 }}</div>
+                </div>
+                <div class="attribute">
+                    <div class="attribute-name">Wisdom</div>
+                    <div class="attribute-value">{{ character.wisdom }}</div>
+                    <div class="attribute-modifier">{{ (character.wisdom - 10) // 2 }}</div>
+                </div>
+                <div class="attribute">
+                    <div class="attribute-name">Charisma</div>
+                    <div class="attribute-value">{{ character.charisma }}</div>
+                    <div class="attribute-modifier">{{ (character.charisma - 10) // 2 }}</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="sheet-section">
+            <h3 class="section-title">Abilities</h3>
+            <div class="abilities-list">
+                {% if character.abilities %}
+                    {% for ability in character.abilities %}
+                        <div class="ability-item">
+                            <div class="ability-name">{{ ability.name }}</div>
+                            <div class="ability-description">{{ ability.description }}</div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="empty-message">No abilities available.</p>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="sheet-section">
+            <h3 class="section-title">Inventory</h3>
+            <div class="inventory-list">
+                {% if character.inventory %}
+                    {% for item in character.inventory %}
+                        <div class="inventory-item">
+                            <div class="item-name">{{ item.name }}</div>
+                            <div class="item-details">
+                                {% if item.type == 'weapon' %}
+                                    <span class="item-type">⚔️ Weapon</span>
+                                    {% if item.damage %}
+                                        <span class="item-stat">Damage: {{ item.damage }}</span>
+                                    {% endif %}
+                                {% elif item.type == 'armor' %}
+                                    <span class="item-type">🛡️ Armor</span>
+                                    {% if item.armor_class %}
+                                        <span class="item-stat">AC: +{{ item.armor_class }}</span>
+                                    {% endif %}
+                                {% elif item.type == 'consumable' %}
+                                    <span class="item-type">🧪 Consumable</span>
+                                {% else %}
+                                    <span class="item-type">📦 Item</span>
+                                {% endif %}
+                            </div>
+                            {% if item.description %}
+                                <div class="item-description">{{ item.description }}</div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="empty-message">Your inventory is empty.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="character-actions">
+        <a href="{{ url_for('main.game') }}" class="action-button">Back to Game</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .character-sheet-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem 0;
+    }
+    
+    .character-sheet-title {
+        text-align: center;
+        margin-bottom: 2rem;
+        color: #5d4037;
+    }
+    
+    .character-sheet {
+        background: #f5f5f5;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
+    
+    .character-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #5d4037;
+        color: white;
+        padding: 1.5rem;
+    }
+    
+    .character-name {
+        margin: 0;
+        font-size: 1.8rem;
+    }
+    
+    .character-meta {
+        font-style: italic;
+        margin-top: 0.25rem;
+    }
+    
+    .character-portrait {
+        width: 80px;
+        height: 80px;
+        background: #795548;
+        border-radius: 50%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        border: 3px solid white;
+    }
+    
+    .portrait-icon {
+        font-size: 2.5rem;
+    }
+    
+    .sheet-section {
+        padding: 1.5rem;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .section-title {
+        margin-top: 0;
+        margin-bottom: 1rem;
+        color: #5d4037;
+        border-bottom: 2px solid #5d4037;
+        padding-bottom: 0.5rem;
+        font-size: 1.3rem;
+    }
+    
+    .info-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+    
+    .info-item {
+        display: flex;
+        flex-direction: column;
+        background: white;
+        border-radius: 4px;
+        padding: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .info-item label {
+        font-size: 0.9rem;
+        color: #666;
+        margin-bottom: 0.25rem;
+    }
+    
+    .info-item span {
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+    
+    .attributes-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+    }
+    
+    .attribute {
+        background: white;
+        border-radius: 4px;
+        padding: 1rem;
+        text-align: center;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .attribute-name {
+        font-weight: bold;
+        color: #5d4037;
+        margin-bottom: 0.5rem;
+    }
+    
+    .attribute-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+    }
+    
+    .attribute-modifier {
+        font-size: 1.1rem;
+        color: #333;
+        margin-top: 0.25rem;
+    }
+    
+    .attribute-modifier::before {
+        content: "(";
+    }
+    
+    .attribute-modifier::after {
+        content: ")";
+    }
+    
+    .abilities-list,
+    .inventory-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .ability-item,
+    .inventory-item {
+        background: white;
+        border-radius: 4px;
+        padding: 1rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .ability-name,
+    .item-name {
+        font-weight: bold;
+        color: #5d4037;
+        margin-bottom: 0.5rem;
+    }
+    
+    .ability-description,
+    .item-description {
+        font-size: 0.95rem;
+        color: #333;
+    }
+    
+    .item-details {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .item-type {
+        font-size: 0.9rem;
+        color: #666;
+    }
+    
+    .item-stat {
+        font-size: 0.9rem;
+        color: #333;
+    }
+    
+    .empty-message {
+        font-style: italic;
+        color: #666;
+    }
+    
+    .character-actions {
+        margin-top: 2rem;
+        text-align: center;
+    }
+    
+    .action-button {
+        display: inline-block;
+        padding: 0.75rem 1.5rem;
+        background: #5d4037;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+        font-weight: bold;
+        transition: background 0.3s;
+    }
+    
+    .action-button:hover {
+        background: #3e2723;
+    }
+    
+    @media (max-width: 600px) {
+        .info-grid,
+        .attributes-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %} 

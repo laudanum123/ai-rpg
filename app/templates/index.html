@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+
+{% block title %}AI Game Master RPG - Welcome{% endblock %}
+
+{% block content %}
+<div class="welcome-container">
+    <div class="welcome-header">
+        <h1>Welcome to AI Game Master RPG</h1>
+        <p class="tagline">Embark on an adventure guided by artificial intelligence</p>
+    </div>
+    
+    <div class="features">
+        <div class="feature">
+            <h3>Dynamic Storytelling</h3>
+            <p>Experience a unique adventure every time with our AI Game Master that adapts to your choices.</p>
+        </div>
+        <div class="feature">
+            <h3>Deep Character Development</h3>
+            <p>Create and grow your character with meaningful decisions and exciting combat encounters.</p>
+        </div>
+        <div class="feature">
+            <h3>Rich, Immersive World</h3>
+            <p>Explore detailed environments, meet interesting NPCs, and uncover hidden quests.</p>
+        </div>
+    </div>
+    
+    <div class="cta-container">
+        <a href="{{ url_for('main.new_character') }}" class="cta-button">Begin Your Adventure</a>
+    </div>
+    
+    <div class="about-game">
+        <h2>About the Game</h2>
+        <p>
+            AI Game Master RPG combines the traditional pen & paper roleplaying experience with 
+            cutting-edge AI technology. Our GPT-4o-mini-powered Game Master creates rich narratives, 
+            challenging combat encounters, and memorable NPCs that respond dynamically to your actions.
+        </p>
+        <p>
+            Whether you're exploring ancient ruins, negotiating with cunning merchants, or battling 
+            fearsome monsters, every decision you make shapes your unique adventure.
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .welcome-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem 0;
+    }
+    
+    .welcome-header {
+        text-align: center;
+        margin-bottom: 3rem;
+    }
+    
+    .tagline {
+        font-size: 1.2rem;
+        color: #666;
+    }
+    
+    .features {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 3rem;
+    }
+    
+    .feature {
+        flex: 1;
+        padding: 1.5rem;
+        background: #f5f5f5;
+        border-radius: 8px;
+        margin: 0 1rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    .feature h3 {
+        color: #333;
+        margin-top: 0;
+    }
+    
+    .cta-container {
+        text-align: center;
+        margin: 3rem 0;
+    }
+    
+    .cta-button {
+        display: inline-block;
+        padding: 1rem 2rem;
+        background: #5d4037;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+        font-size: 1.2rem;
+        font-weight: bold;
+        transition: background 0.3s;
+    }
+    
+    .cta-button:hover {
+        background: #3e2723;
+    }
+    
+    .about-game {
+        margin-top: 3rem;
+        padding: 2rem;
+        background: #f5f5f5;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+</style>
+{% endblock %} 

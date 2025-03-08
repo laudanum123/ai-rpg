@@ -1,0 +1,103 @@
+{% extends 'base.html' %}
+
+{% block title %}API Debug{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>OpenAI API Debug</h1>
+    
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h3 class="mb-0">Debug Settings</h3>
+        </div>
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h5>Status: <span class="badge {% if debug_enabled %}bg-success{% else %}bg-danger{% endif %}">
+                        {% if debug_enabled %}Enabled{% else %}Disabled{% endif %}
+                    </span></h5>
+                    <p class="text-muted">When enabled, all OpenAI API requests and responses will be logged.</p>
+                </div>
+                <div>
+                    <form method="post" class="d-inline">
+                        <button type="submit" name="toggle_debug" class="btn {% if debug_enabled %}btn-warning{% else %}btn-success{% endif %} me-2">
+                            {% if debug_enabled %}Disable{% else %}Enable{% endif %} Debug Mode
+                        </button>
+                        <button type="submit" name="clear_logs" class="btn btn-outline-danger">
+                            Clear Logs
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-dark text-white">
+            <h3 class="mb-0">API Logs ({{ api_logs|length }})</h3>
+        </div>
+        <div class="card-body">
+            {% if api_logs %}
+                <div class="accordion" id="apiLogsAccordion">
+                    {% for log in api_logs %}
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="heading{{ loop.index }}">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
+                                        data-bs-target="#collapse{{ loop.index }}" aria-expanded="false" 
+                                        aria-controls="collapse{{ loop.index }}">
+                                    <div class="d-flex w-100 justify-content-between align-items-center">
+                                        <span>{{ log.timestamp }}</span>
+                                        {% if log.error %}
+                                            <span class="badge bg-danger">Error</span>
+                                        {% else %}
+                                            <span class="badge bg-success">Success</span>
+                                        {% endif %}
+                                    </div>
+                                </button>
+                            </h2>
+                            <div id="collapse{{ loop.index }}" class="accordion-collapse collapse" 
+                                 aria-labelledby="heading{{ loop.index }}" data-bs-parent="#apiLogsAccordion">
+                                <div class="accordion-body">
+                                    <h4>Request</h4>
+                                    <div class="alert alert-secondary">
+                                        <h5>Model: {{ log.request.model }}</h5>
+                                        <h5>Messages:</h5>
+                                        {% for message in log.request.messages %}
+                                            <div class="card mb-2">
+                                                <div class="card-header bg-info text-white">
+                                                    {{ message.role }}
+                                                </div>
+                                                <div class="card-body">
+                                                    <pre class="mb-0"><code>{{ message.content }}</code></pre>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                        <p><strong>Temperature:</strong> {{ log.request.temperature }}</p>
+                                        <p><strong>Max Tokens:</strong> {{ log.request.max_tokens }}</p>
+                                    </div>
+
+                                    {% if log.error %}
+                                        <h4>Error</h4>
+                                        <div class="alert alert-danger">
+                                            {{ log.error }}
+                                        </div>
+                                    {% else %}
+                                        <h4>Response</h4>
+                                        <div class="alert alert-success">
+                                            <pre class="mb-0"><code>{{ log.response.choices[0].message.content }}</code></pre>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="alert alert-info">
+                    No API logs available. Enable debug mode and make some requests to see logs appear here.
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
