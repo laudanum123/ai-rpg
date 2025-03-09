@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+
+{% block title %}Memory Graph Debug{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Memory Graph Debug</h1>
+    
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h3 class="card-title mb-0">Memory Statistics</h3>
+        </div>
+        <div class="card-body">
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Total Memory Nodes
+                    <span class="badge bg-primary rounded-pill">{{ memory_count }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Event Nodes
+                    <span class="badge bg-info rounded-pill">{{ type_counts.event|default(0) }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Character Nodes
+                    <span class="badge bg-success rounded-pill">{{ type_counts.character|default(0) }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Location Nodes
+                    <span class="badge bg-warning rounded-pill">{{ type_counts.location|default(0) }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Combat Nodes
+                    <span class="badge bg-danger rounded-pill">{{ type_counts.combat|default(0) }}</span>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header bg-dark text-white">
+                    <h3 class="card-title mb-0">Memory Query Tool</h3>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('main.memory_debug') }}">
+                        <div class="mb-3">
+                            <label for="query" class="form-label">Query Context</label>
+                            <textarea class="form-control" id="query" name="query" rows="3" placeholder="What memories would you like to retrieve?">{{ query }}</textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="node_limit" class="form-label">Number of Nodes</label>
+                            <input type="number" class="form-control" id="node_limit" name="node_limit" value="{{ node_limit|default(5) }}" min="1" max="20">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Retrieve Memories</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h3 class="card-title mb-0">Memory Graph Health</h3>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Relations Count
+                            <span class="badge bg-secondary rounded-pill">{{ relation_count }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Average Importance Score
+                            <span class="badge bg-info rounded-pill">{{ avg_importance|round(2) }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Last Updated</span>
+                            <span>{{ last_updated }}</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if relevant_memories %}
+    <div class="card mb-4">
+        <div class="card-header bg-info text-white">
+            <h3 class="card-title mb-0">Retrieved Memories</h3>
+        </div>
+        <div class="card-body">
+            {% for memory in relevant_memories %}
+            <div class="memory-item card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="memory-type badge bg-{{ memory.type_color }}">{{ memory.metadata.type }}</span>
+                    <small class="text-muted">Importance: {{ memory.metadata.importance }}</small>
+                </div>
+                <div class="card-body">
+                    <h5 class="card-title">{{ memory.id[:8] }}</h5>
+                    <p class="card-text memory-content">{{ memory.content|replace('\n', '<br>')|safe }}</p>
+                    <div class="memory-metadata">
+                        <small class="text-muted">Created: {{ memory.metadata.timestamp }}</small>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add any client-side JS for memory visualization here
+    });
+</script>
+{% endblock %}

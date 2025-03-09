@@ -8,12 +8,16 @@ requires-python = ">=3.8"
 dependencies = [
     "flask==2.3.3",
     "flask-cors==4.0.0",
-    "openai==0.28.0",
+    "openai>=1.1.0",  # Updated for newer API features
     "python-dotenv==1.0.0",
     "sqlalchemy==2.0.20",
     "gunicorn==21.2.0",
     "pydantic==2.3.0",
     "requests==2.31.0",
+    "numpy>=1.24.0",  # For embeddings and vector operations
+    "scikit-learn>=1.2.0",  # For cosine similarity calculations
+    "pandas>=2.0.0",  # For data handling
+    "matplotlib>=3.7.0",  # For visualization in debug views
 ]
 
 [build-system]

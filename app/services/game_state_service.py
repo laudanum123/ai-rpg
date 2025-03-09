@@ -351,4 +351,24 @@ class GameStateService:
             if completed_quest:
                 self.update_session(session)
                 return completed_quest
-        return None 
+        return None
+    
+    def set_session_attribute(self, session_id: str, attribute: str, value) -> bool:
+        """Set a custom attribute on a session.
+        
+        Args:
+            session_id: Session ID
+            attribute: Attribute name
+            value: Attribute value
+            
+        Returns:
+            True if the attribute was set, False otherwise
+        """
+        session = self.get_session(session_id)
+        if session:
+            # Set the attribute directly on the object
+            setattr(session, attribute, value)
+            # Update the session
+            self.update_session(session)
+            return True
+        return False

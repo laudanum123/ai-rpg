@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, request, session, jsonify, flash, current_app
 from datetime import datetime
+import statistics
 from app.services.character_service import CharacterService
 from app.services.game_state_service import GameStateService
 from app.services.game_master import GameMaster
@@ -37,6 +38,10 @@ def new_character():
         session_id = game_state_service.create_session(character.id, game_world)
         session['session_id'] = session_id
         
+        # Initialize game with memory tracking
+        intro_text = game_master.start_game(character, game_world, session_id=session_id)
+        game_state_service.add_message_to_history(session_id, "gm", intro_text)
+        
         return redirect(url_for('main.game'))
     
     return render_template('new_character.html')
@@ -58,6 +63,12 @@ def game():
         session.pop('character_id', None)
         session.pop('session_id', None)
         return redirect(url_for('main.new_character'))
+    
+    # If this is a new session that hasn't been initialized with memory graph yet
+    if not hasattr(game_session, 'intro_generated') or not game_session.intro_generated:
+        intro_text = game_master.start_game(character, game_session.game_world, session_id=session_id)
+        game_state_service.add_message_to_history(session_id, "gm", intro_text)
+        game_state_service.set_session_attribute(session_id, 'intro_generated', True)
     
     return render_template(
         'game.html', 
@@ -108,7 +119,16 @@ def process_action():
     if game_session.in_combat:
         # Combat action
         result = game_master.process_combat_action(game_session, character, action)
-        game_state_service.add_message_to_history(session_id, "gm", result["description"])
+        result_desc = result["description"]
+        game_state_service.add_message_to_history(session_id, "gm", result_desc)
+        
+        # Store combat events in memory graph (with session ID for context retrieval)
+        combat_memory = f"Combat action: {action}\nResult: {result_desc}"
+        game_master.memory_graph.add_node(
+            content=combat_memory,
+            node_type="combat",
+            importance=0.9  # Combat events are high importance
+        )
         
         # Update character if needed
         if "damage_taken" in result.get("effects", {}):
@@ -224,4 +244,88 @@ def debug():
         'debug.html', 
         api_logs=api_logs,
         debug_enabled=current_app.config.get('API_DEBUG', False)
-    ) 
+    )
+
+@main.route('/memory-debug', methods=['GET', 'POST'])
+def memory_debug():
+    """Memory graph debug page to visualize and test the memory system."""
+    # Initialize variables
+    query = ""
+    node_limit = 5
+    relevant_memories = []
+    
+    # Handle memory query form submission
+    if request.method == 'POST':
+        query = request.form.get('query', '')
+        node_limit = int(request.form.get('node_limit', 5))
+        
+        if query:
+            # Get relevant memories based on the query
+            memory_context = game_master.memory_graph.get_relevant_context(query, node_limit, 2000)
+            
+            # Get the actual memory nodes for display
+            # This requires some custom logic since get_relevant_context returns formatted text
+            query_embedding = game_master.memory_graph.get_embedding(query)
+            
+            # Find nodes with highest similarity
+            similarity_scores = {}
+            for node_id, node in game_master.memory_graph.nodes.items():
+                if node.embedding is not None:
+                    import numpy as np
+                    from sklearn.metrics.pairwise import cosine_similarity
+                    similarity = cosine_similarity([query_embedding], [node.embedding])[0][0]
+                    similarity_scores[node_id] = similarity
+            
+            # Get top nodes
+            ranked_nodes = sorted(
+                similarity_scores.items(), 
+                key=lambda x: x[1], 
+                reverse=True
+            )[:node_limit]
+            
+            # Prepare nodes for display
+            for node_id, _ in ranked_nodes:
+                node = game_master.memory_graph.nodes[node_id]
+                # Add color based on node type
+                node_type_colors = {
+                    'event': 'primary',
+                    'character': 'success',
+                    'location': 'warning',
+                    'combat': 'danger',
+                    'item': 'info'
+                }
+                node_copy = node.to_dict()
+                node_copy['type_color'] = node_type_colors.get(node.metadata['type'], 'secondary')
+                relevant_memories.append(node_copy)
+    
+    # Collect memory statistics
+    memory_count = len(game_master.memory_graph.nodes)
+    relation_count = sum(len(rel_list) for rel_list in game_master.memory_graph.relations.values())
+    
+    # Count nodes by type
+    type_counts = {}
+    importance_values = []
+    
+    for node in game_master.memory_graph.nodes.values():
+        node_type = node.metadata['type']
+        type_counts[node_type] = type_counts.get(node_type, 0) + 1
+        importance_values.append(node.metadata['importance'])
+    
+    # Calculate average importance
+    avg_importance = statistics.mean(importance_values) if importance_values else 0
+    
+    # Get timestamp of last update
+    last_updated = max([datetime.fromisoformat(node.metadata['timestamp']) 
+                       for node in game_master.memory_graph.nodes.values()]) if memory_count > 0 else 'No data'
+    
+    return render_template(
+        'memory_debug.html',
+        memory_count=memory_count,
+        type_counts=type_counts,
+        relation_count=relation_count,
+        avg_importance=avg_importance,
+        last_updated=last_updated,
+        query=query,
+        node_limit=node_limit,
+        relevant_memories=relevant_memories
+    )
