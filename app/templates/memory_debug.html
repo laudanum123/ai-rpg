@@ -8,6 +8,60 @@
     
     <div class="card mb-4">
         <div class="card-header bg-primary text-white">
+            <h3 class="card-title mb-0">Session Selection</h3>
+        </div>
+        <div class="card-body">
+            <form method="GET" action="{{ url_for('main.memory_debug') }}">
+                <div class="mb-3">
+                    <label for="session_id" class="form-label">Select Game Session</label>
+                    <select class="form-select" id="session_id" name="session_id" onchange="this.form.submit()">
+                        {% if sessions|length == 0 %}
+                            <option value="">No sessions available</option>
+                        {% else %}
+                            {% for session in sessions %}
+                                <option value="{{ session.session_id }}" {% if session.session_id == selected_session_id %}selected{% endif %}>
+                                    {{ session.character_name }} ({{ session.last_updated.strftime('%Y-%m-%d %H:%M') }})
+                                </option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+                <input type="hidden" name="view_mode" value="{{ view_mode }}">
+                {% if view_mode == 'browse' %}
+                    <input type="hidden" name="sort_by" value="{{ sort_by }}">
+                    <input type="hidden" name="sort_order" value="{{ sort_order }}">
+                {% endif %}
+            </form>
+        </div>
+    </div>
+    
+    {% if selected_session_id %}
+    <div class="card mb-4">
+        <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+            <h3 class="card-title mb-0">View Options</h3>
+        </div>
+        <div class="card-body">
+            <div class="btn-group w-100 mb-3" role="group">
+                <a href="{{ url_for('main.memory_debug', session_id=selected_session_id, view_mode='stats') }}" 
+                   class="btn btn-{% if view_mode == 'stats' %}primary{% else %}outline-primary{% endif %}">
+                    <i class="bi bi-bar-chart-fill"></i> Memory Statistics
+                </a>
+                <a href="{{ url_for('main.memory_debug', session_id=selected_session_id, view_mode='search') }}" 
+                   class="btn btn-{% if view_mode == 'search' %}primary{% else %}outline-primary{% endif %}">
+                    <i class="bi bi-search"></i> Memory Search
+                </a>
+                <a href="{{ url_for('main.memory_debug', session_id=selected_session_id, view_mode='browse') }}" 
+                   class="btn btn-{% if view_mode == 'browse' %}primary{% else %}outline-primary{% endif %}">
+                    <i class="bi bi-list"></i> Browse Memories
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if view_mode == 'stats' or view_mode == 'search' %}
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
             <h3 class="card-title mb-0">Memory Statistics</h3>
         </div>
         <div class="card-body">
@@ -35,7 +89,190 @@
             </ul>
         </div>
     </div>
+    {% endif %}
+    
+    {% if view_mode == 'browse' %}
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h3 class="card-title mb-0">Memory Browser</h3>
+            <div class="btn-group">
+                <a href="{{ url_for('main.memory_debug', session_id=selected_session_id, view_mode='browse', sort_by='timestamp', sort_order='desc') }}" 
+                   class="btn btn-sm btn-{% if sort_by == 'timestamp' and sort_order == 'desc' %}light{% else %}outline-light{% endif %}">
+                    Newest First
+                </a>
+                <a href="{{ url_for('main.memory_debug', session_id=selected_session_id, view_mode='browse', sort_by='timestamp', sort_order='asc') }}" 
+                   class="btn btn-sm btn-{% if sort_by == 'timestamp' and sort_order == 'asc' %}light{% else %}outline-light{% endif %}">
+                    Oldest First
+                </a>
+                <a href="{{ url_for('main.memory_debug', session_id=selected_session_id, view_mode='browse', sort_by='importance', sort_order='desc') }}" 
+                   class="btn btn-sm btn-{% if sort_by == 'importance' and sort_order == 'desc' %}light{% else %}outline-light{% endif %}">
+                    Most Important
+                </a>
+                <a href="{{ url_for('main.memory_debug', session_id=selected_session_id, view_mode='browse', sort_by='type', sort_order='asc') }}" 
+                   class="btn btn-sm btn-{% if sort_by == 'type' and sort_order == 'asc' %}light{% else %}outline-light{% endif %}">
+                    By Type
+                </a>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="row m-0">
+                <!-- Memory Nodes List -->
+                <div class="{% if selected_node %}col-md-6{% else %}col-md-12{% endif %} p-0 border-end">
+                    <div class="list-group list-group-flush">
+                        {% if memory_nodes|length == 0 %}
+                            <div class="list-group-item text-center py-4">
+                                <p class="mb-0">No memory nodes found for this session.</p>
+                            </div>
+                        {% else %}
+                            {% for node in memory_nodes %}
+                                {% set node_type_colors = {
+                                    'event': 'primary',
+                                    'character': 'success',
+                                    'location': 'warning',
+                                    'combat': 'danger',
+                                    'item': 'info'
+                                } %}
+                                {% set node_color = node_type_colors.get(node.metadata.type, 'secondary') %}
+                                <a href="{{ url_for('main.memory_debug', session_id=selected_session_id, view_mode='browse', node_id=node.id, sort_by=sort_by, sort_order=sort_order) }}" 
+                                   class="list-group-item list-group-item-action {% if selected_node and selected_node.id == node.id %}active{% endif %}">
+                                    <div class="d-flex w-100 justify-content-between align-items-center">
+                                        <div>
+                                            <span class="badge bg-{{ node_color }} me-2">{{ node.metadata.type|capitalize }}</span>
+                                            <small>{{ node.id[:8] }}</small>
+                                        </div>
+                                        <small>{{ node.metadata.timestamp|replace('T', ' ')|truncate(16, true, '') }}</small>
+                                    </div>
+                                    <p class="mb-1 mt-2">{{ node.summary }}</p>
+                                    <div class="d-flex justify-content-between align-items-center mt-2">
+                                        <small>Importance: {{ "%.2f"|format(node.metadata.importance) }}</small>
+                                        <small>
+                                            <span class="badge bg-secondary">{{ node.incoming_relations + node.outgoing_relations }} Relations</span>
+                                        </small>
+                                    </div>
+                                </a>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <!-- Node Details Section -->
+                {% if selected_node %}
+                <div class="col-md-6 p-0">
+                    <div class="p-3">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h4>Memory Node Details</h4>
+                            <form method="POST" action="{{ url_for('main.delete_memory_node') }}" onsubmit="return confirm('Are you sure you want to delete this memory node? This action cannot be undone.')">
+                                <input type="hidden" name="session_id" value="{{ selected_session_id }}">
+                                <input type="hidden" name="node_id" value="{{ selected_node.id }}">
+                                <button type="submit" class="btn btn-danger btn-sm">
+                                    <i class="bi bi-trash"></i> Delete Node
+                                </button>
+                            </form>
+                        </div>
+                        
+                        <div class="card mb-3">
+                            <div class="card-header bg-dark text-white">
+                                Node Information
+                            </div>
+                            <div class="card-body">
+                                <p><strong>ID:</strong> {{ selected_node.id }}</p>
+                                <p><strong>Type:</strong> {{ selected_node.metadata.type|capitalize }}</p>
+                                <p><strong>Created:</strong> {{ selected_node.metadata.timestamp|replace('T', ' ') }}</p>
+                                <p><strong>Importance:</strong> {{ selected_node.metadata.importance }}</p>
+                                <p><strong>Access Count:</strong> {{ selected_node.metadata.access_count }}</p>
+                            </div>
+                        </div>
+                        
+                        <div class="card mb-3">
+                            <div class="card-header bg-dark text-white">
+                                Content
+                            </div>
+                            <div class="card-body">
+                                <p><strong>Summary:</strong></p>
+                                <p class="border-bottom pb-2">{{ selected_node.summary }}</p>
+                                <p><strong>Full Content:</strong></p>
+                                <p>{{ selected_node.content }}</p>
+                            </div>
+                        </div>
+                        
+                        {% if node_relations %}
+                        <div class="card mb-3">
+                            <div class="card-header bg-dark text-white">
+                                Relations ({{ node_relations.incoming|length + node_relations.outgoing|length }})
+                            </div>
+                            <div class="card-body p-0">
+                                <ul class="nav nav-tabs" id="relationTabs" role="tablist">
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link active" id="outgoing-tab" data-bs-toggle="tab" data-bs-target="#outgoing" type="button" role="tab">
+                                            Outgoing ({{ node_relations.outgoing|length }})
+                                        </button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="incoming-tab" data-bs-toggle="tab" data-bs-target="#incoming" type="button" role="tab">
+                                            Incoming ({{ node_relations.incoming|length }})
+                                        </button>
+                                    </li>
+                                </ul>
+                                <div class="tab-content" id="relationTabsContent">
+                                    <div class="tab-pane fade show active" id="outgoing" role="tabpanel">
+                                        <ul class="list-group list-group-flush">
+                                            {% if node_relations.outgoing|length == 0 %}
+                                                <li class="list-group-item text-center">No outgoing relations</li>
+                                            {% else %}
+                                                {% for relation in node_relations.outgoing %}
+                                                    <li class="list-group-item">
+                                                        <div class="d-flex justify-content-between align-items-center">
+                                                            <div>
+                                                                <span class="badge bg-primary">{{ relation.type }}</span>
+                                                                <a href="{{ url_for('main.memory_debug', session_id=selected_session_id, view_mode='browse', node_id=relation.node_id, sort_by=sort_by, sort_order=sort_order) }}">
+                                                                    {{ relation.summary|truncate(70) }}
+                                                                </a>
+                                                            </div>
+                                                            <small>{{ relation.node_id[:8] }}</small>
+                                                        </div>
+                                                    </li>
+                                                {% endfor %}
+                                            {% endif %}
+                                        </ul>
+                                    </div>
+                                    <div class="tab-pane fade" id="incoming" role="tabpanel">
+                                        <ul class="list-group list-group-flush">
+                                            {% if node_relations.incoming|length == 0 %}
+                                                <li class="list-group-item text-center">No incoming relations</li>
+                                            {% else %}
+                                                {% for relation in node_relations.incoming %}
+                                                    <li class="list-group-item">
+                                                        <div class="d-flex justify-content-between align-items-center">
+                                                            <div>
+                                                                <span class="badge bg-info">{{ relation.type }}</span>
+                                                                <a href="{{ url_for('main.memory_debug', session_id=selected_session_id, view_mode='browse', node_id=relation.node_id, sort_by=sort_by, sort_order=sort_order) }}">
+                                                                    {{ relation.summary|truncate(70) }}
+                                                                </a>
+                                                            </div>
+                                                            <small>{{ relation.node_id[:8] }}</small>
+                                                        </div>
+                                                    </li>
+                                                {% endfor %}
+                                            {% endif %}
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% else %}
+                            <div class="alert alert-info">
+                                This node has no relations with other memory nodes.
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
+    {% if view_mode == 'search' %}
     <div class="row">
         <div class="col-md-6">
             <div class="card mb-4">
@@ -52,6 +289,10 @@
                             <label for="node_limit" class="form-label">Number of Nodes</label>
                             <input type="number" class="form-control" id="node_limit" name="node_limit" value="{{ node_limit|default(5) }}" min="1" max="20">
                         </div>
+                        {% if selected_session_id %}
+                            <input type="hidden" name="session_id" value="{{ selected_session_id }}">
+                        {% endif %}
+                        <input type="hidden" name="view_mode" value="search">
                         <button type="submit" class="btn btn-primary">Retrieve Memories</button>
                     </form>
                 </div>
@@ -82,6 +323,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     {% if relevant_memories %}
     <div class="card mb-4">
@@ -108,6 +350,7 @@
     </div>
     {% endif %}
 </div>
+
 {% endblock %}
 
 {% block scripts %}

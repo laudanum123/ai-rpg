@@ -18,6 +18,7 @@ dependencies = [
     "scikit-learn>=1.2.0",  # For cosine similarity calculations
     "pandas>=2.0.0",  # For data handling
     "matplotlib>=3.7.0",  # For visualization in debug views
+    "flask-markdown>=0.3.0",  # For Markdown formatting in templates
 ]
 
 [build-system]

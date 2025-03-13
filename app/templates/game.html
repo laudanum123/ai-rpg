@@ -79,8 +79,10 @@
                     <div class="log-entry {{ 'player-message' if message.role == 'player' else 'gm-message' }}">
                         {% if message.role == 'player' %}
                             <span class="message-prefix">You: </span>
+                            {{ message.content }}
+                        {% else %}
+                            {{ message.content|markdown }}
                         {% endif %}
-                        {{ message.content }}
                     </div>
                 {% endfor %}
             {% else %}
@@ -162,6 +164,12 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<!-- Define server variables first so they're available as clean JavaScript variables -->
+<script>
+    // Server-provided initial state
+    const SERVER_COMBAT_STATE = {% if in_combat %}true{% else %}false{% endif %};
+</script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const actionText = document.getElementById('action-text');
@@ -188,43 +196,6 @@
                 e.preventDefault();
                 sendAction();
             }
-        });
-        
-        // Quick action buttons
-        quickActions.forEach(button => {
-            button.addEventListener('click', function() {
-                const action = this.getAttribute('data-action');
-                let actionMessage = '';
-                
-                switch(action) {
-                    case 'look':
-                        actionMessage = 'I look around the area carefully.';
-                        break;
-                    case 'inventory':
-                        actionMessage = 'I check my inventory.';
-                        break;
-                    case 'rest':
-                        actionMessage = 'I want to rest and recover.';
-                        break;
-                    case 'search':
-                        actionMessage = 'I search the area for anything interesting.';
-                        break;
-                    case 'attack':
-                        actionMessage = 'I attack the nearest enemy.';
-                        break;
-                    case 'defend':
-                        actionMessage = 'I take a defensive stance.';
-                        break;
-                    case 'flee':
-                        actionMessage = 'I try to flee from combat.';
-                        break;
-                    default:
-                        actionMessage = action;
-                }
-                
-                actionText.value = actionMessage;
-                sendAction();
-            });
         });
         
         // Send action to server
@@ -265,10 +236,10 @@
                 // Remove loading indicator
                 gameLog.removeChild(loadingEntry);
                 
-                // Display GM's response
+                // Display GM's response with markdown formatting
                 const gmEntry = document.createElement('div');
                 gmEntry.className = 'log-entry gm-message';
-                gmEntry.textContent = data.message;
+                gmEntry.innerHTML = marked.parse(data.message); // Use marked to parse markdown
                 gameLog.appendChild(gmEntry);
                 
                 // Update character info if provided
@@ -276,7 +247,7 @@
                     updateCharacterInfo(data.character);
                 }
                 
-                // Update location if provided
+                // Always update location if provided
                 if (data.location) {
                     updateLocation(data.location);
                 }
@@ -323,8 +294,61 @@
                 }
             });
             
-            // Update inventory if shown
-            // (This would need more code to handle dynamically)
+            // Update inventory dynamically
+            const inventoryList = document.querySelector('.inventory-list');
+            if (inventoryList) {
+                // Clear current inventory display
+                inventoryList.innerHTML = '';
+                
+                // Check if inventory exists and has items
+                if (character.inventory && character.inventory.length > 0) {
+                    // Add each item to the inventory panel
+                    character.inventory.forEach(item => {
+                        const itemDiv = document.createElement('div');
+                        itemDiv.className = 'inventory-item';
+                        
+                        // Add item name
+                        const nameSpan = document.createElement('span');
+                        nameSpan.className = 'item-name';
+                        nameSpan.textContent = item.name;
+                        itemDiv.appendChild(nameSpan);
+                        
+                        // Add item type with appropriate icon
+                        const typeSpan = document.createElement('span');
+                        typeSpan.className = 'item-type';
+                        
+                        // Choose icon based on item type
+                        if (item.type === 'weapon') {
+                            typeSpan.textContent = '⚔️ Weapon';
+                        } else if (item.type === 'armor') {
+                            typeSpan.textContent = '🛡️ Armor';
+                        } else if (item.type === 'consumable') {
+                            typeSpan.textContent = '🧪 Consumable';
+                        } else if (item.type === 'quest') {
+                            typeSpan.textContent = '📜 Quest Item';
+                        } else if (item.type === 'scroll') {
+                            typeSpan.textContent = '📖 Scroll';
+                        } else {
+                            typeSpan.textContent = '📦 Item';
+                        }
+                        
+                        itemDiv.appendChild(typeSpan);
+                        
+                        // Add item description as a tooltip
+                        if (item.description) {
+                            itemDiv.title = item.description;
+                        }
+                        
+                        // Add item to inventory list
+                        inventoryList.appendChild(itemDiv);
+                    });
+                } else {
+                    // Show empty inventory message
+                    const emptyMessage = document.createElement('p');
+                    emptyMessage.textContent = 'Your inventory is empty.';
+                    inventoryList.appendChild(emptyMessage);
+                }
+            }
         }
         
         // Update location information
@@ -341,7 +365,7 @@
             
             // Reload page to reflect combat state change
             // In a more advanced implementation, this would be handled dynamically
-            if (inCombat !== {{ 'true' if in_combat else 'false' }}) {
+            if (inCombat !== {{ in_combat|lower }}) {
                 window.location.reload();
             }
         }
@@ -728,4 +752,4 @@
         }
     }
 </style>
-{% endblock %} 
+{% endblock %}

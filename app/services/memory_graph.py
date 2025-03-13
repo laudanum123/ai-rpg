@@ -201,20 +201,38 @@ Output ONLY the relationship lines, nothing else. If no relationships exist, out
                     continue
                     
                 try:
-                    relation_type, src_id, dst_id = line.strip().split('|')
-                    # Validate IDs
-                    if src_id not in self.nodes or dst_id not in self.nodes:
-                        for node in existing_nodes:
-                            if node.id in dst_id:  # Handle if the model included brackets
-                                dst_id = node.id
-                                break
+                    # Split the line by | character
+                    parts = line.strip().split('|')
                     
-                    if src_id in self.nodes and dst_id in self.nodes:
-                        self.relations[relation_type].append((src_id, dst_id))
-                        # Update references
-                        self.nodes[src_id].metadata['references'].add(dst_id)
-                except ValueError:
-                    print(f"Invalid relation format: {line}")
+                    # Extract relation type and IDs based on the format
+                    if len(parts) >= 3:  # At minimum, we need relation_type, src_id, dst_id
+                        relation_type = parts[0]
+                        src_id = parts[1]
+                        
+                        # Handle different formats
+                        if len(parts) == 3:
+                            dst_id = parts[2]
+                        elif len(parts) == 4:  # Format with weight or index: relation|src|weight|dst
+                            dst_id = parts[3]
+                        else:
+                            # If more parts, assume the last part is dst_id
+                            dst_id = parts[-1]
+                            
+                        # Validate IDs
+                        if src_id not in self.nodes or dst_id not in self.nodes:
+                            for node in existing_nodes:
+                                if node.id in dst_id:  # Handle if the model included brackets
+                                    dst_id = node.id
+                                    break
+                        
+                        if src_id in self.nodes and dst_id in self.nodes:
+                            self.relations[relation_type].append((src_id, dst_id))
+                            # Update references
+                            self.nodes[src_id].metadata['references'].add(dst_id)
+                    else:
+                        print(f"Not enough parts in relation format: {line}")
+                except Exception as e:
+                    print(f"Error parsing relation: {line} - {str(e)}")
                     continue
                     
         except Exception as e:
@@ -368,3 +386,116 @@ Output ONLY the relationship lines, nothing else. If no relationships exist, out
                         self.relations[rel_type] = rel_list
             except Exception as e:
                 print(f"Error loading relations: {str(e)}")
+                
+    def delete_node(self, node_id: str) -> bool:
+        """Delete a node and all its relations from the memory graph.
+        
+        Args:
+            node_id: The ID of the node to delete
+            
+        Returns:
+            True if the node was deleted, False otherwise
+        """
+        # Check if node exists
+        if node_id not in self.nodes:
+            return False
+            
+        # Remove node from disk
+        node_path = os.path.join(self.storage_dir, f"{node_id}.json")
+        if os.path.exists(node_path):
+            try:
+                os.remove(node_path)
+            except Exception as e:
+                print(f"Error deleting node file {node_path}: {str(e)}")
+                return False
+        
+        # Remove node from memory
+        del self.nodes[node_id]
+        
+        # Remove all relations involving this node
+        for rel_type in self.relations:
+            # Filter out relations involving the deleted node
+            self.relations[rel_type] = [
+                (src, dst) for src, dst in self.relations[rel_type]
+                if src != node_id and dst != node_id
+            ]
+        
+        # Remove references to this node from other nodes
+        for node in self.nodes.values():
+            if node_id in node.metadata['references']:
+                node.metadata['references'].remove(node_id)
+                self._save_node(node)
+        
+        # Save updated relations
+        self._save_relations()
+        
+        return True
+    
+    def get_all_nodes(self, sort_by: str = 'timestamp', reverse: bool = True) -> List[Dict[str, Any]]:
+        """Get all nodes in the memory graph, optionally sorted.
+        
+        Args:
+            sort_by: Field to sort by ('timestamp', 'importance', 'type')
+            reverse: If True, sort in descending order
+            
+        Returns:
+            List of nodes as dictionaries
+        """
+        nodes_list = []
+        
+        for node in self.nodes.values():
+            node_dict = node.to_dict()
+            # Add relation counts
+            node_dict['incoming_relations'] = sum(1 for rel_type in self.relations for src, dst in self.relations[rel_type] if dst == node.id)
+            node_dict['outgoing_relations'] = sum(1 for rel_type in self.relations for src, dst in self.relations[rel_type] if src == node.id)
+            nodes_list.append(node_dict)
+        
+        # Sort nodes
+        if sort_by == 'timestamp':
+            nodes_list.sort(key=lambda x: x['metadata']['timestamp'], reverse=reverse)
+        elif sort_by == 'importance':
+            nodes_list.sort(key=lambda x: x['metadata']['importance'], reverse=reverse)
+        elif sort_by == 'type':
+            nodes_list.sort(key=lambda x: x['metadata']['type'], reverse=reverse)
+        
+        return nodes_list
+    
+    def get_node_relations(self, node_id: str) -> Dict[str, List[Dict[str, Any]]]:
+        """Get all relations for a specific node.
+        
+        Args:
+            node_id: The ID of the node
+            
+        Returns:
+            Dictionary with incoming and outgoing relations
+        """
+        if node_id not in self.nodes:
+            return {'incoming': [], 'outgoing': []}
+        
+        incoming = []
+        outgoing = []
+        
+        for rel_type, relations in self.relations.items():
+            for src, dst in relations:
+                # Outgoing relations
+                if src == node_id:
+                    if dst in self.nodes:
+                        outgoing.append({
+                            'type': rel_type,
+                            'node_id': dst,
+                            'summary': self.nodes[dst].summary
+                        })
+                
+                # Incoming relations
+                if dst == node_id:
+                    if src in self.nodes:
+                        incoming.append({
+                            'type': rel_type,
+                            'node_id': src,
+                            'summary': self.nodes[src].summary
+                        })
+        
+        return {
+            'incoming': incoming,
+            'outgoing': outgoing
+        }

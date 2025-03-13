@@ -2,6 +2,7 @@ from flask import Flask
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
+from flaskext.markdown import Markdown
 
 # Load environment variables
 load_dotenv()
@@ -37,5 +38,8 @@ def create_app(test_config=None):
     # Register main routes blueprint
     from app.routes import main
     app.register_blueprint(main)
+    
+    # Initialize Flask-Markdown
+    Markdown(app)
 
     return app 

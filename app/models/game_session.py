@@ -23,17 +23,36 @@ class GameSession:
     
     def to_dict(self) -> Dict:
         """Convert session to dictionary."""
-        return {
+        # Start with the base dictionary
+        result = {
             "id": self.id,
             "character_id": self.character_id,
             "game_world": self.game_world,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "history": self.history,
             "current_location": self.current_location,
-            "in_combat": self.in_combat,
+            "npcs": self.npcs,
+            "locations": self.locations,
+            "plot_hooks": self.plot_hooks,
             "active_quests": self.active_quests,
-            "completed_quests": len(self.completed_quests)
+            "completed_quests": self.completed_quests,
+            "in_combat": self.in_combat,
+            "combat_state": self.combat_state
         }
+        
+        # Add any custom attributes that aren't part of the dataclass fields
+        for attr_name in dir(self):
+            if not attr_name.startswith('_') and attr_name not in result and hasattr(self, attr_name):
+                try:
+                    # Only include serializable attributes
+                    value = getattr(self, attr_name)
+                    if not callable(value):
+                        result[attr_name] = value
+                except:
+                    pass
+        
+        return result
     
     def to_json(self) -> str:
         """Convert session to JSON string."""

@@ -74,12 +74,18 @@ class GameStateService:
         # Try to load the session from storage
         session_path = os.path.join(self.data_dir, f"{session_id}.json")
         if os.path.exists(session_path):
-            with open(session_path, 'r') as f:
-                session_data = json.load(f)
-                session = GameSession.from_dict(session_data)
-                # Cache the session
-                self.sessions[session_id] = session
-                return session
+            try:
+                with open(session_path, 'r') as f:
+                    try:
+                        session_data = json.load(f)
+                        session = GameSession.from_dict(session_data)
+                        # Cache the session
+                        self.sessions[session_id] = session
+                        return session
+                    except json.JSONDecodeError as e:
+                        print(f"Error reading session {session_id}: {e}")
+            except Exception as e:
+                print(f"Error processing session {session_id}: {e}")
         
         return None
     
@@ -94,6 +100,69 @@ class GameStateService:
         """
         return self.get_session(session_id) is not None
     
+    def get_all_sessions(self) -> List[GameSession]:
+        """Get all available game sessions.
+        
+        Returns:
+            List of all game sessions
+        """
+        sessions = []
+        # Check the data directory for session files
+        for filename in os.listdir(self.data_dir):
+            if filename.endswith('.json'):
+                try:
+                    session_id = filename.replace('.json', '')
+                    # Attempt to load the session directly rather than using get_session
+                    # to handle potential JSON errors more gracefully
+                    session_path = os.path.join(self.data_dir, filename)
+                    with open(session_path, 'r') as f:
+                        try:
+                            session_data = json.load(f)
+                            session = GameSession.from_dict(session_data)
+                            sessions.append(session)
+                        except json.JSONDecodeError as e:
+                            print(f"Error reading session file {filename}: {e}")
+                except Exception as e:
+                    print(f"Error processing session file {filename}: {e}")
+        return sessions
+    
+    def delete_session(self, session_id: str) -> bool:
+        """Delete a game session.
+        
+        Args:
+            session_id: ID of the session to delete
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        session_path = os.path.join(self.data_dir, f"{session_id}.json")
+        
+        if os.path.exists(session_path):
+            try:
+                # Remove from disk
+                os.remove(session_path)
+                
+                # Remove from memory cache if present
+                if session_id in self.sessions:
+                    del self.sessions[session_id]
+                    
+                # Also delete the session's memory graph directory if it exists
+                try:
+                    from app import game_master
+                    if hasattr(game_master, 'memory_graph_config') and 'storage_dir' in game_master.memory_graph_config:
+                        memory_dir = os.path.join(game_master.memory_graph_config["storage_dir"], session_id)
+                        if os.path.exists(memory_dir):
+                            import shutil
+                            shutil.rmtree(memory_dir)
+                except Exception as e:
+                    print(f"Warning: Could not delete memory graph for session {session_id}: {e}")
+                    
+                return True
+            except Exception as e:
+                print(f"Error deleting session {session_id}: {e}")
+                return False
+        return False
+        
     def save_session(self, session: GameSession) -> None:
         """Save a session to storage.
         

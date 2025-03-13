@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Game Sessions - AI Game Master RPG{% endblock %}
+
+{% block content %}
+<section class="sessions-manager">
+    <h2>Manage Game Sessions</h2>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    
+    {% if sessions %}
+        <div class="sessions-list">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Character</th>
+                        <th>Level</th>
+                        <th>Location</th>
+                        <th>Last Played</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for session_data in sessions %}
+                        <tr>
+                            <td>{{ session_data.character.name }} ({{ session_data.character.character_class }})</td>
+                            <td>{{ session_data.character.level }}</td>
+                            <td>{{ session_data.session.current_location.name }}</td>
+                            <td>{{ session_data.last_updated.strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td class="session-actions">
+                                <a href="{{ url_for('main.load_session', session_id=session_data.session.id) }}" class="button">Load</a>
+                                <form action="{{ url_for('main.delete_session', session_id=session_data.session.id) }}" method="post" onsubmit="return confirm('Are you sure you want to delete this session? This action cannot be undone.');">
+                                    <button type="submit" class="button delete">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="no-sessions">
+            <p>No game sessions found. <a href="{{ url_for('main.new_character') }}">Create a new character</a> to start playing!</p>
+        </div>
+    {% endif %}
+    
+    <div class="sessions-controls">
+        <a href="{{ url_for('main.new_character') }}" class="button">Create New Character</a>
+        <a href="{{ url_for('main.index') }}" class="button secondary">Back to Home</a>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .sessions-manager {
+        background-color: rgba(0, 0, 0, 0.7);
+        border-radius: 5px;
+        padding: 20px;
+        margin-top: 20px;
+    }
+    
+    .sessions-list {
+        margin: 20px 0;
+        overflow-x: auto;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+    }
+    
+    th, td {
+        padding: 12px 15px;
+        text-align: left;
+        border-bottom: 1px solid #444;
+    }
+    
+    th {
+        background-color: #333;
+        color: #f1c40f;
+        font-weight: bold;
+    }
+    
+    tr:hover {
+        background-color: rgba(80, 80, 80, 0.3);
+    }
+    
+    .session-actions {
+        display: flex;
+        gap: 10px;
+    }
+    
+    .button {
+        display: inline-block;
+        padding: 8px 15px;
+        background-color: #f1c40f;
+        color: #111;
+        text-decoration: none;
+        border-radius: 4px;
+        font-weight: bold;
+        border: none;
+        cursor: pointer;
+        transition: background-color 0.3s;
+    }
+    
+    .button:hover {
+        background-color: #f39c12;
+    }
+    
+    .button.delete {
+        background-color: #e74c3c;
+        color: white;
+    }
+    
+    .button.delete:hover {
+        background-color: #c0392b;
+    }
+    
+    .button.secondary {
+        background-color: #7f8c8d;
+        color: white;
+    }
+    
+    .button.secondary:hover {
+        background-color: #95a5a6;
+    }
+    
+    .sessions-controls {
+        display: flex;
+        gap: 15px;
+        margin-top: 20px;
+    }
+    
+    .alert {
+        padding: 10px 15px;
+        margin-bottom: 15px;
+        border-radius: 4px;
+    }
+    
+    .alert-success {
+        background-color: rgba(46, 204, 113, 0.3);
+        border: 1px solid #2ecc71;
+        color: #2ecc71;
+    }
+    
+    .alert-error {
+        background-color: rgba(231, 76, 60, 0.3);
+        border: 1px solid #e74c3c;
+        color: #e74c3c;
+    }
+    
+    .no-sessions {
+        text-align: center;
+        padding: 30px;
+        background-color: rgba(50, 50, 50, 0.3);
+        border-radius: 5px;
+        margin: 20px 0;
+    }
+</style>
+{% endblock %}
