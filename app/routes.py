@@ -1,19 +1,21 @@
+import statistics
+from datetime import datetime
+
 from flask import (
     Blueprint,
-    render_template,
+    current_app,
+    flash,
+    jsonify,
     redirect,
-    url_for,
+    render_template,
     request,
     session,
-    jsonify,
-    flash,
-    current_app,
+    url_for,
 )
-from datetime import datetime
-import statistics
+
 from app.services.character_service import CharacterService
-from app.services.game_state_service import GameStateService
 from app.services.game_master import GameMaster
+from app.services.game_state_service import GameStateService
 
 main = Blueprint("main", __name__)
 character_service = CharacterService()
@@ -91,7 +93,8 @@ def delete_session(session_id):
         # If we deleted the active session, remove it from the user's session
         if is_active:
             session.pop("session_id", None)
-            # Don't remove character_id as they might want to start a new session with the same character
+            # Don't remove character_id as they might want to start a new session with
+            # the same character
 
         flash("Session deleted successfully.", "success")
     else:
@@ -259,7 +262,8 @@ def process_action():
                 "character": character.to_dict(),
                 "location": game_session.current_location,
                 "in_combat": game_session.in_combat,
-                "inventory": character.inventory,  # Explicitly include inventory for frontend
+                # Explicitly include inventory for frontend
+                "inventory": character.inventory,
             }
         )
 

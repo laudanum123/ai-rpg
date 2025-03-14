@@ -1,8 +1,8 @@
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
-import uuid
 import json
+import uuid
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -54,7 +54,7 @@ class GameSession:
                     value = getattr(self, attr_name)
                     if not callable(value):
                         result[attr_name] = value
-                except:
+                except Exception:  # Catch serialization issues
                     pass
 
         return result

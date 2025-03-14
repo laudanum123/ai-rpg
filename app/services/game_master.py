@@ -9,6 +9,7 @@ from flask import current_app
 from app.models.character import Character
 from app.models.npc import NPC
 from app.models.combat import Enemy, CombatEncounter, roll_dice
+from app.models.game_session import GameSession
 from app.services.memory_graph import MemoryGraph
 
 
@@ -122,12 +123,63 @@ class GameMaster:
         memory_graph = self.get_session_memory_graph(session_id)
         return memory_graph.get_node_relations(node_id)
 
+    def parse_combat_result(self, ai_response: str) -> Dict[str, Any]:
+        """Parse combat results from an AI response.
+
+        Args:
+            ai_response: The AI's response text containing combat results
+
+        Returns:
+            Dictionary with parsed combat information
+        """
+        result = {
+            "description": ai_response,
+            "damage_dealt": 0,
+            "player_damage_taken": 0,
+            "enemy_defeated": False
+        }
+
+        # Extract damage dealt
+        import re
+        damage_dealt_match = re.search(r"Player damage dealt:\s*(\d+)", ai_response)
+        if damage_dealt_match:
+            result["damage_dealt"] = int(damage_dealt_match.group(1))
+
+        # Extract player damage taken
+        damage_taken_match = re.search(r"Player damage taken:\s*(\d+)", ai_response)
+        if damage_taken_match:
+            result["player_damage_taken"] = int(damage_taken_match.group(1))
+
+        # Check if enemy was defeated
+        if any(phrase in ai_response.lower() for phrase in [
+            "enemy defeated", 
+            "enemy is defeated", 
+            "enemy has been defeated",
+            "enemy is killed",
+            "enemy has been killed",
+            "enemy is dead",
+            "enemy lies dead",
+            "defeated the enemy",
+            "killed the enemy"
+        ]):
+            result["enemy_defeated"] = True
+
+        return result
+
     def get_ai_response(
         self,
-        messages: List[Dict],
+        messages: List[Dict] or str,
         session_id: str = None,
         recent_history_turns: int = 5,
+        model_name: str = "gpt-4o-mini",
+        max_tokens: int = 2000,
     ) -> str:
+        # Debug print at entry
+        print(f"Entering get_ai_response with debug_enabled={getattr(self, 'debug_enabled', None)}")
+        
+        # Initialize api_debug_logs if it doesn't exist
+        if not hasattr(self, 'api_debug_logs'):
+            self.api_debug_logs = []
         """Get a response from the AI model with contextual memory.
 
         Args:
@@ -138,13 +190,19 @@ class GameMaster:
         Returns:
             AI model's response text
         """
-        # Check if API debug mode is enabled in the app config
-        try:
-            self.debug_enabled = current_app.config.get("API_DEBUG", False)
-        except RuntimeError:
-            # Not in an application context, assume debug is False
-            self.debug_enabled = False
+        # Only check app config if debug_enabled hasn't been set yet
+        # This prevents overriding debug_enabled when it's set in tests
+        if not hasattr(self, 'debug_enabled'):
+            try:
+                self.debug_enabled = current_app.config.get("API_DEBUG", False)
+            except RuntimeError:
+                # Not in an application context
+                self.debug_enabled = False
 
+        # Handle string message (convert to proper message format)
+        if isinstance(messages, str):
+            messages = [{"role": "user", "content": messages}]
+        
         # Extract the current situation from the latest user message
         current_situation = ""
         for msg in reversed(messages):
@@ -234,33 +292,44 @@ class GameMaster:
         ):
             final_messages.append(current_user_query)
 
+        # Initialize debug entry outside the try block if debug is enabled
+        debug_entry = None
+        if self.debug_enabled:
+            # Extract prompt based on message format
+            prompt_content = messages
+            if not isinstance(messages, str):
+                if isinstance(messages, list) and len(messages) > 0 and "content" in messages[0]:
+                    prompt_content = messages[0]["content"]
+                else:
+                    prompt_content = str(messages)
+                    
+            debug_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "model": model_name,
+                "prompt": prompt_content,
+                "max_tokens": max_tokens,
+                "temperature": 0.7,
+                "response": None,
+                "error": None,
+            }
+            
         try:
+            # Print before API call
+            print(f"About to call OpenAI API, debug_enabled={self.debug_enabled}")
             # Use OpenAI 1.0+ API format
-            # Store request data if debug is enabled
-            if self.debug_enabled:
-                debug_entry = {
-                    "timestamp": datetime.now().isoformat(),
-                    "request": {
-                        "model": "gpt-4o-mini",
-                        "messages": final_messages,
-                        "temperature": 0.7,
-                        "max_tokens": 2000,
-                    },
-                    "response": None,
-                    "error": None,
-                }
 
             # Make the actual API call with the new client-based API
+            print(f"Client object: {self.client}")
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=model_name,
                 messages=final_messages,
                 temperature=0.7,
-                max_tokens=2000,
+                max_tokens=max_tokens,
             )
             response_content = response.choices[0].message.content
 
             # Store response data if debug is enabled
-            if self.debug_enabled:
+            if self.debug_enabled and debug_entry is not None:
                 debug_entry["response"] = response
                 self.api_debug_logs.append(debug_entry)
 
@@ -271,10 +340,43 @@ class GameMaster:
 
             # Store error data if debug is enabled
             if self.debug_enabled:
-                debug_entry["error"] = error_msg
+                # Print for debugging
+                print(f"Debug enabled: {self.debug_enabled}, Debug entry: {debug_entry}")
+                
+                # If debug_entry wasn't initialized, create it now
+                if debug_entry is None:
+                    # Extract prompt based on message format
+                    prompt_content = messages
+                    if not isinstance(messages, str):
+                        if isinstance(messages, list) and len(messages) > 0 and "content" in messages[0]:
+                            prompt_content = messages[0]["content"]
+                        else:
+                            prompt_content = str(messages)
+                            
+                    debug_entry = {
+                        "timestamp": datetime.now().isoformat(),
+                        "model": model_name,
+                        "prompt": prompt_content,
+                        "max_tokens": max_tokens,
+                        "temperature": 0.7,
+                        "response": None,
+                        "error": error_msg,
+                    }
+                else:
+                    debug_entry["error"] = error_msg
+                
+                # Print debug log before appending
+                print(f"Debug entry to append: {debug_entry}")
+                print(f"Debug logs before append: {self.api_debug_logs}")
+                
+                # Ensure debug log is appended before raising
                 self.api_debug_logs.append(debug_entry)
+                
+                # Print debug logs after append
+                print(f"Debug logs after append: {self.api_debug_logs}")
 
-            return error_msg
+            # Re-raise the exception to allow tests to catch it
+            raise
 
     def start_game(
         self, character: Character, game_world: str, session_id: str = None
@@ -505,16 +607,46 @@ class GameMaster:
                         },
                     },
                 },
+                "relationship_updates": {
+                    "type": "object",
+                    "description": "Updates to NPC relationships as a result of this action",
+                    "properties": {
+                        "npc_relationships": {
+                            "type": "array",
+                            "description": "Changes in relationships with NPCs",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "description": "The name of the NPC",
+                                    },
+                                    "change": {
+                                        "type": "number",
+                                        "description": "The change in relationship value (positive for improved, negative for worsened)",
+                                    },
+                                    "reason": {
+                                        "type": "string",
+                                        "description": "The reason for the relationship change",
+                                    },
+                                },
+                                "required": ["name", "change"],
+                            },
+                        },
+                    },
+                },
             },
             "required": ["message", "location"],
         }
 
-        # Check if API debug mode is enabled in the app config
-        try:
-            self.debug_enabled = current_app.config.get("API_DEBUG", False)
-        except RuntimeError:
-            # Not in an application context, assume debug is False
-            self.debug_enabled = False
+        # Only check app config if debug_enabled hasn't been set yet
+        # This prevents overriding debug_enabled when it's set in tests
+        if not hasattr(self, 'debug_enabled'):
+            try:
+                self.debug_enabled = current_app.config.get("API_DEBUG", False)
+            except RuntimeError:
+                # Not in an application context
+                self.debug_enabled = False
 
         # Create debug entry if debug is enabled
         if self.debug_enabled:
@@ -777,6 +909,210 @@ class GameMaster:
                                 importance=0.7,
                             )
 
+                # Process relationship updates if present
+                if "relationship_updates" in function_args and isinstance(
+                    function_args["relationship_updates"], dict
+                ):
+                    rel_updates = function_args["relationship_updates"]
+                    
+                    # Process NPC relationship changes
+                    if "npc_relationships" in rel_updates and isinstance(
+                        rel_updates["npc_relationships"], list
+                    ):
+                        for npc_rel in rel_updates["npc_relationships"]:
+                            if isinstance(npc_rel, dict) and "name" in npc_rel and "change" in npc_rel:
+                                npc_name = npc_rel["name"]
+                                relation_change = npc_rel["change"]
+                                reason = npc_rel.get("reason", "Recent interaction")
+                                
+                                # Log relationship change to memory graph
+                                memory_graph = self.get_session_memory_graph(session.id)
+                                memory_graph.add_node(
+                                    content=f"Relationship with {npc_name} changed by {relation_change}. Reason: {reason}",
+                                    node_type="relationship",
+                                    importance=0.8,
+                                )
+                                
+                # Process combat updates if in combat
+                if "combat_updates" in function_args and session.in_combat:
+                    combat_updates = function_args["combat_updates"]
+                    
+                    # Update enemy states
+                    if "enemies" in combat_updates and isinstance(combat_updates["enemies"], list):
+                        session.combat_state["enemies"] = combat_updates["enemies"]
+                    
+                    # Update combat round
+                    if "round" in combat_updates and isinstance(combat_updates["round"], int):
+                        session.combat_state["round"] = combat_updates["round"]
+                    
+                    # Apply damage to player if specified
+                    if "player_damage_taken" in combat_updates and isinstance(combat_updates["player_damage_taken"], int):
+                        damage = combat_updates["player_damage_taken"]
+                        if damage > 0:
+                            character.take_damage(damage)
+                            
+                            # Log combat damage to memory graph
+                            memory_graph = self.get_session_memory_graph(session.id)
+                            memory_graph.add_node(
+                                content=f"Character took {damage} damage in combat",
+                                node_type="combat",
+                                importance=0.7,
+                            )
+                    
+                    # Persist combat state changes
+                    from app.services.game_state_service import GameStateService
+                    game_state_service = GameStateService()
+                    game_state_service.update_session(session)
+                    
+                    # If combat is over, check if it should be ended
+                    if "combat_ended" in combat_updates and combat_updates["combat_ended"]:
+                        session.in_combat = False
+                        session.combat_state = None
+                        
+                # Process quest updates
+                if "quest_updates" in function_args and isinstance(function_args["quest_updates"], dict):
+                    quest_updates = function_args["quest_updates"]
+                    
+                    # Handle new quests
+                    if "new_quests" in quest_updates and isinstance(quest_updates["new_quests"], list):
+                        for quest in quest_updates["new_quests"]:
+                            # Support both 'name' and 'title' fields for quests
+                            quest_name = quest.get("name") or quest.get("title")
+                            if isinstance(quest, dict) and quest_name and "description" in quest:
+                                # Generate a unique ID for the quest
+                                import uuid
+                                quest_id = str(uuid.uuid4())
+                                
+                                # Add additional fields if not present
+                                if "objectives" not in quest:
+                                    quest["objectives"] = ["Complete the quest"]
+                                    
+                                if "reward" not in quest:
+                                    quest["reward"] = {"experience": 50, "gold": 25}
+                                    
+                                # Create complete quest object
+                                new_quest = {
+                                    "id": quest.get("id", quest_id),
+                                    "title": quest_name,
+                                    "description": quest["description"],
+                                    "objectives": quest.get("objectives", ["Complete the quest"]),
+                                    "reward": quest.get("reward", {"experience": 50, "gold": 25}),
+                                    "complete": False,
+                                    "progress": 0
+                                }
+                                
+                                # Add to active quests
+                                if not hasattr(session, "active_quests") or session.active_quests is None:
+                                    session.active_quests = []
+                                    
+                                session.active_quests.append(new_quest)
+                                
+                                # Log quest addition to memory graph
+                                memory_graph = self.get_session_memory_graph(session.id)
+                                memory_graph.add_node(
+                                    content=f"Started new quest: {quest_name} - {quest['description']}",
+                                    node_type="quest",
+                                    importance=0.9,
+                                )
+                    
+                    # Handle completed quests
+                    if "completed_quests" in quest_updates and isinstance(quest_updates["completed_quests"], list):
+                        if not hasattr(session, "completed_quests") or session.completed_quests is None:
+                            session.completed_quests = []
+                            
+                        for quest_id in quest_updates["completed_quests"]:
+                            # Find the quest in active quests by ID
+                            if hasattr(session, "active_quests") and session.active_quests:
+                                for i, quest in enumerate(session.active_quests):
+                                    if quest.get("id") == quest_id:
+                                        # Mark as complete
+                                        quest["complete"] = True
+                                        
+                                        # Move to completed quests
+                                        session.completed_quests.append(quest)
+                                        session.active_quests.pop(i)
+                                        
+                                        # Log to memory graph
+                                        memory_graph = self.get_session_memory_graph(session.id)
+                                        memory_graph.add_node(
+                                            content=f"Completed quest: {quest.get('title')}",
+                                            node_type="quest",
+                                            importance=0.9,
+                                        )
+                                        break
+                                        
+                    # Handle updated quests
+                    if "updated_quests" in quest_updates and isinstance(quest_updates["updated_quests"], list):
+                        for quest_update in quest_updates["updated_quests"]:
+                            if isinstance(quest_update, dict) and "id" in quest_update:
+                                quest_id = quest_update["id"]
+                                
+                                # Find the quest in active quests by ID
+                                if hasattr(session, "active_quests") and session.active_quests:
+                                    for quest in session.active_quests:
+                                        if quest.get("id") == quest_id:
+                                            # Update progress if specified
+                                            if "progress" in quest_update:
+                                                quest["progress"] = quest_update["progress"]
+                                                
+                                                # Log to memory graph
+                                                memory_graph = self.get_session_memory_graph(session.id)
+                                                memory_graph.add_node(
+                                                    content=f"Quest progress: {quest.get('title')} - {quest_update['progress']}",
+                                                    node_type="quest",
+                                                    importance=0.7,
+                                                )
+                                            break
+                    
+                    # Handle quest progress updates
+                    if "quest_progress" in quest_updates and isinstance(quest_updates["quest_progress"], list):
+                        for progress in quest_updates["quest_progress"]:
+                            if isinstance(progress, dict) and "name" in progress and "progress" in progress:
+                                quest_name = progress["name"]
+                                progress_value = progress["progress"]
+                                
+                                # Find the quest by name
+                                if hasattr(session, "active_quests") and session.active_quests:
+                                    for quest in session.active_quests:
+                                        if quest["name"] == quest_name:
+                                            quest["progress"] = progress_value
+                                            
+                                            # Check if quest is now complete
+                                            if progress_value >= 100:
+                                                quest["complete"] = True
+                                                
+                                                # Award quest rewards
+                                                if "reward" in quest:
+                                                    if "experience" in quest["reward"]:
+                                                        xp = quest["reward"]["experience"]
+                                                        character.add_experience(xp)
+                                                        
+                                                    if "gold" in quest["reward"]:
+                                                        gold = quest["reward"]["gold"]
+                                                        character.gold += gold
+                                            
+                                            # Log quest progress to memory graph
+                                            memory_graph = self.get_session_memory_graph(session.id)
+                                            if quest["complete"]:
+                                                memory_graph.add_node(
+                                                    content=f"Completed quest: {quest_name}",
+                                                    node_type="quest",
+                                                    importance=0.9,
+                                                )
+                                            else:
+                                                memory_graph.add_node(
+                                                    content=f"Quest progress: {quest_name} - {progress_value}%",
+                                                    node_type="quest",
+                                                    importance=0.7,
+                                                )
+                                            
+                                            break
+                    
+                    # Persist quest updates
+                    from app.services.game_state_service import GameStateService
+                    game_state_service = GameStateService()
+                    game_state_service.update_session(session)
+                
                 # Set the final response text to the message portion
                 if "message" in function_args:
                     response = function_args["message"]
@@ -901,6 +1237,30 @@ class GameMaster:
 
                         character_service = CharacterService()
                         character_service.update_character(character)
+
+                    # Process relationship updates for fallback path
+                    if "relationship_updates" in parsed_response and isinstance(
+                        parsed_response["relationship_updates"], dict
+                    ):
+                        rel_updates = parsed_response["relationship_updates"]
+                        
+                        # Process NPC relationship changes
+                        if "npc_relationships" in rel_updates and isinstance(
+                            rel_updates["npc_relationships"], list
+                        ):
+                            for npc_rel in rel_updates["npc_relationships"]:
+                                if isinstance(npc_rel, dict) and "name" in npc_rel and "change" in npc_rel:
+                                    npc_name = npc_rel["name"]
+                                    relation_change = npc_rel["change"]
+                                    reason = npc_rel.get("reason", "Recent interaction")
+                                    
+                                    # Log relationship change to memory graph
+                                    memory_graph = self.get_session_memory_graph(session.id)
+                                    memory_graph.add_node(
+                                        content=f"Relationship with {npc_name} changed by {relation_change}. Reason: {reason}",
+                                        node_type="relationship",
+                                        importance=0.8,
+                                    )
 
                     # Process character updates for fallback path
                     if "character_updates" in parsed_response and isinstance(

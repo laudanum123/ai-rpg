@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Dict, List, Optional
+
 from app.models.character import Character
 
 
@@ -50,7 +51,7 @@ class CharacterService:
             character.abilities.append(
                 {
                     "name": "Second Wind",
-                    "description": "Recover 1d10 + level hit points. Once per short rest.",
+                    "description": "Recover 1d10 + level HP. Once per short rest.",
                 }
             )
         elif character_class.lower() == "wizard":
@@ -68,7 +69,8 @@ class CharacterService:
             character.abilities.append(
                 {
                     "name": "Sneak Attack",
-                    "description": "Deal extra damage when you have advantage on attack rolls.",
+                    "description": "Deal extra damage when you have advantage \
+                    on attack rolls.",
                 }
             )
 
@@ -81,7 +83,8 @@ class CharacterService:
                     "type": "weapon",
                     "damage": "1d8",
                     "properties": ["versatile"],
-                    "description": "A versatile sword that can be used with one or two hands.",
+                    "description": "A versatile sword that can be used with one or two \
+                        hands.",
                 }
             )
             character.add_item(
@@ -90,7 +93,8 @@ class CharacterService:
                     "name": "Shield",
                     "type": "armor",
                     "armor_class": 2,
-                    "description": "A sturdy shield that provides protection in combat.",
+                    "description": "A sturdy shield that provides protection in \
+                        combat.",
                 }
             )
         elif character_class.lower() == "wizard":
@@ -101,7 +105,8 @@ class CharacterService:
                     "type": "weapon",
                     "damage": "1d6",
                     "properties": ["casting_focus"],
-                    "description": "A wooden staff that serves as a spellcasting focus.",
+                    "description": "A wooden staff that serves as a spellcasting \
+                    focus.",
                 }
             )
             character.add_item(

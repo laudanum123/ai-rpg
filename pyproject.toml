@@ -22,6 +22,16 @@ dependencies = [
     "ruff>=0.1.5",  # Python linter
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.3.1",
+    "pytest-flask>=1.2.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.10.0",
+    "black>=23.3.0",
+    "isort>=5.12.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
