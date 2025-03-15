@@ -40,15 +40,15 @@ MEMORY_CONTEXTS = {
 # Mock for OpenAI API behavior with different instructions
 def mock_openai_completion(system_prompt, user_message, relevant_memory=None):
     """Simulate an OpenAI API call with deterministic responses based on input patterns."""
-    
+
     # Include memory in system prompt if available
     full_system_prompt = system_prompt
     if relevant_memory:
         full_system_prompt += f"\n\nRelevant game history:\n{relevant_memory}"
-    
+
     # Detect key phrases in the user message to determine response category
     message_lower = user_message.lower()
-    
+
     # Game start detection
     if "start game" in message_lower or "new adventure" in message_lower:
         if "sci-fi" in message_lower or "future" in message_lower:
@@ -57,7 +57,7 @@ def mock_openai_completion(system_prompt, user_message, relevant_memory=None):
             return GM_RESPONSES["game_start"]["horror"]
         else:
             return GM_RESPONSES["game_start"]["fantasy"]
-    
+
     # Combat detection
     elif "fight" in message_lower or "attack" in message_lower or "combat" in message_lower:
         if "undead" in message_lower or "skeleton" in message_lower or "zombie" in message_lower:
@@ -66,7 +66,7 @@ def mock_openai_completion(system_prompt, user_message, relevant_memory=None):
             return GM_RESPONSES["combat_start"]["robot"]
         else:
             return GM_RESPONSES["combat_start"]["goblin"]
-    
+
     # Combat action detection
     elif "sword" in message_lower or "swing" in message_lower or "strike" in message_lower:
         if "critical" in full_system_prompt or "natural 20" in full_system_prompt:
@@ -81,7 +81,7 @@ def mock_openai_completion(system_prompt, user_message, relevant_memory=None):
             return GM_RESPONSES["combat_action"]["hit"].format(
                 enemy="goblin", weapon="sword", damage=6
             )
-    
+
     # Exploration detection
     elif "explore" in message_lower or "look around" in message_lower or "investigate" in message_lower:
         if "forest" in message_lower or "woods" in message_lower:
@@ -90,7 +90,7 @@ def mock_openai_completion(system_prompt, user_message, relevant_memory=None):
             return GM_RESPONSES["exploration"]["dungeon"]
         else:
             return GM_RESPONSES["exploration"]["town"]
-    
+
     # Default response for other queries
     else:
         return "The Game Master ponders your action for a moment. \"An interesting choice. Let's see where this leads us...\""

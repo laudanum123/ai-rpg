@@ -1,15 +1,12 @@
-import os
-import pytest
 from unittest.mock import MagicMock, patch
-from flask import Flask
+
+import pytest
+
 from app import create_app
 from app.models.character import Character
+from app.models.combat import CombatEncounter, Enemy
 from app.models.game_session import GameSession
-from app.models.combat import Enemy, CombatEncounter
 from app.services.game_master import GameMaster
-from app.services.character_service import CharacterService
-from app.services.game_state_service import GameStateService
-from app.services.memory_graph import MemoryGraph
 
 
 @pytest.fixture
@@ -20,7 +17,7 @@ def app():
         'API_DEBUG': False,
         'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:'
     })
-    
+
     # Setup application context
     with app.app_context():
         yield app
@@ -64,18 +61,18 @@ def mock_character():
         gold=50,
         experience=0
     )
-    
+
     # Add items to inventory
     character.add_item({"id": "sword-1", "name": "Short Sword", "damage": 5})
     character.add_item({"id": "shield-1", "name": "Shield", "defense": 2})
     character.add_item({"id": "potion-1", "name": "Health Potion", "healing": 10})
-    
+
     # Add abilities
     character.abilities = [
         {"id": "strike-1", "name": "Strike", "damage": 3, "cost": 0},
         {"id": "block-1", "name": "Block", "defense": 2, "cost": 0}
     ]
-    
+
     return character
 
 
@@ -90,7 +87,7 @@ def mock_game_session():
         created_at="2025-03-13T00:00:00",
         updated_at="2025-03-13T00:00:00"
     )
-    
+
     # Add some history entries
     session.history = [
         {
@@ -112,14 +109,14 @@ def mock_game_session():
             "timestamp": "2025-03-13T00:03:00"
         }
     ]
-    
+
     # Set current location
     session.current_location = {
         "id": "village-1",
         "name": "Eldoria Village",
         "description": "A peaceful village with thatched-roof cottages."
     }
-    
+
     return session
 
 

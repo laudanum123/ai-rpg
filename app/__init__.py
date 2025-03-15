@@ -1,7 +1,8 @@
+import os
+
+from dotenv import load_dotenv
 from flask import Flask
 from flask_cors import CORS
-import os
-from dotenv import load_dotenv
 from flaskext.markdown import Markdown
 
 # Load environment variables

@@ -4,12 +4,10 @@ AI Service module that handles interactions with OpenAI's API.
 import json
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Union, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from flask import current_app
-from openai import OpenAI
 
-from app.services.memory_graph import MemoryNode
 from app.services.game_state_service import GameStateService
 
 logger = logging.getLogger(__name__)
@@ -19,20 +17,32 @@ class AIService:
     Service that handles all interactions with the OpenAI API, including
     preparing prompts, sending requests, and processing responses.
     """
-    
-    def __init__(self, openai_client, system_prompt):
+
+    def __init__(self, openai_client, system_prompt, game_master_debug_logs=None):
         """
         Initialize the AI service.
         
         Args:
             openai_client: The OpenAI client instance
             system_prompt: The system prompt to use for AI interactions
+            game_master_debug_logs: Optional reference to GameMaster's debug logs collection
         """
         self.openai_client = openai_client
         self.system_prompt = system_prompt
         self.api_debug_logs = []
+        self.game_master_debug_logs = game_master_debug_logs
+
+        # Initialize debug settings immediately
         self.debug_enabled = False
-    
+        try:
+            from flask import current_app
+            if current_app:
+                self.debug_enabled = current_app.config.get("API_DEBUG", False)
+                print(f"AIService initialized with debug_enabled={self.debug_enabled}")
+        except (ImportError, RuntimeError):
+            # This happens when Flask app context is not available
+            pass
+
     def get_ai_response(
         self,
         messages: Union[List[Dict], str],
@@ -70,18 +80,27 @@ class AIService:
 
         # Initialize debug entry if debug is enabled
         debug_entry = self._create_debug_entry(messages, model_name, max_tokens) if self.debug_enabled else None
-        
+
         try:
             # Call the OpenAI API and process the response
             response_content = self._call_openai_api(final_messages, model_name, max_tokens)
-            
+
             # Store response data if debug is enabled
             if self.debug_enabled and debug_entry is not None:
                 debug_entry["response"] = response_content
+                debug_entry["session_id"] = session_id
+                debug_entry["request"]["messages"] = final_messages
+
+                # Add to internal logs
+                print(f"Adding successful API call to debug logs, log count={len(self.api_debug_logs)+1}")
                 self.api_debug_logs.append(debug_entry)
-                
+
+                # Also add to game master logs if available
+                if self.game_master_debug_logs is not None:
+                    self.game_master_debug_logs.append(debug_entry.copy())  # Use copy to avoid reference issues
+
             return response_content
-            
+
         except Exception as e:
             return self._handle_ai_response_error(e, messages, debug_entry)
 
@@ -89,18 +108,22 @@ class AIService:
         """Initialize debug settings if they haven't been set."""
         if not hasattr(self, 'api_debug_logs'):
             self.api_debug_logs = []
-            
-        # Only check app config if debug_enabled hasn't been set yet
-        if not hasattr(self, 'debug_enabled'):
-            try:
-                self.debug_enabled = current_app.config.get("API_DEBUG", False)
-            except RuntimeError:
-                # Not in an application context
-                self.debug_enabled = False
+
+        # Always check app config to get the latest setting
+        try:
+            old_debug = self.debug_enabled
+            self.debug_enabled = current_app.config.get("API_DEBUG", False)
+            if old_debug != self.debug_enabled:
+                print(f"Debug setting changed: {old_debug} -> {self.debug_enabled}")
+        except RuntimeError:
+            # Not in an application context
+            print("No application context available for debug settings")
 
     def _log_request_debug_info(self, messages, session_id, model_name):
         """Log debug information about the request."""
         print("DEBUG - get_ai_response called with:")
+        print(f"  - debug_enabled: {self.debug_enabled}")
+        print(f"  - api_debug_logs count: {len(self.api_debug_logs)}")
         print(f"  - messages type: {type(messages)}")
         if isinstance(messages, list) and len(messages) > 0:
             print(f"  - first message type: {type(messages[0])}")
@@ -118,10 +141,10 @@ class AIService:
         """Prepare messages with memory context and conversation history."""
         # Extract the current situation from the latest user message
         current_situation = self._extract_current_situation(messages)
-        
+
         # Get memory context if we have a session ID
         memory_context = self._get_memory_context(session_id, current_situation, memory_graph)
-        
+
         # Create the system message with memory context
         final_messages = [
             {
@@ -129,23 +152,23 @@ class AIService:
                 "content": self.system_prompt + (f"\n\nRelevant game history:\n{memory_context}" if memory_context else ""),
             }
         ]
-        
+
         # Get the user's current query
         current_user_query = self._get_current_user_query(messages)
-        
+
         # Add conversation history if available
         if session_id and recent_history_turns > 0 and current_user_query:
             if game_state_service is None:
                 game_state_service = GameStateService()
-                
+
             final_messages.extend(
                 self._get_conversation_history(session_id, recent_history_turns, game_state_service)
             )
-        
+
         # Add the current query as the final user message
         if current_user_query and (not final_messages or final_messages[-1]["role"] != "user"):
             final_messages.append(current_user_query)
-            
+
         return final_messages
 
     def _extract_current_situation(self, messages):
@@ -159,14 +182,14 @@ class AIService:
         """Get memory context for the current situation."""
         if not session_id or not current_situation:
             return ""
-        
+
         # If memory_graph was provided, use it directly
         if memory_graph is not None:
             context = memory_graph.get_relevant_context(
                 current_situation, node_limit=10, max_tokens=10000
             )
             return context
-            
+
         # Otherwise, we would need to get it from a session, but we don't have access
         # to get_session_memory_graph in this service, so we'll return empty
         logger.warning("No memory_graph provided and no way to get it, returning empty context")
@@ -182,16 +205,16 @@ class AIService:
     def _get_conversation_history(self, session_id, recent_history_turns, game_state_service):
         """Get relevant conversation history messages."""
         history = game_state_service.get_session_history(session_id)
-        
+
         if not history or len(history) == 0:
             return []
-        
+
         # Filter to just player/GM exchanges
         filtered_history = []
         for msg in history:
             role = msg.get("role", "")
             content = msg.get("content", "")
-            
+
             # Only include player statements and GM responses
             if role in ["player", "gm"] and content:
                 # Further filter out inventory updates or status messages
@@ -202,10 +225,10 @@ class AIService:
                     or "updated" in content.lower()
                 ):
                     filtered_history.append(msg)
-        
+
         # Take only recent turns based on parameter
         recent_turns = filtered_history[-min(recent_history_turns * 2, len(filtered_history)):]
-        
+
         # Convert to OpenAI message format
         openai_messages = []
         for msg in recent_turns:
@@ -217,7 +240,7 @@ class AIService:
                 else "system"
             )
             openai_messages.append({"role": openai_role, "content": msg.get("content", "")})
-        
+
         return openai_messages
 
     def _create_debug_entry(self, messages, model_name, max_tokens):
@@ -225,33 +248,43 @@ class AIService:
         # Extract prompt based on message format
         prompt_content = messages
         if not isinstance(messages, str):
-            if isinstance(messages, list) and len(messages) > 0 and "content" in messages[0]:
+            if isinstance(messages, list) and len(messages) > 0 and isinstance(messages[0], dict) and "content" in messages[0]:
                 prompt_content = messages[0]["content"]
             else:
                 prompt_content = str(messages)
-        
-        return {
+
+        # Create a debug entry that matches the expected format in debug.html template
+        entry = {
             "timestamp": datetime.now().isoformat(),
             "model": model_name,
             "prompt": prompt_content,
             "max_tokens": max_tokens,
             "temperature": 0.7,
             "response": None,
+            "request": {
+                "model": model_name,
+                "messages": [],  # Will be populated later with final messages
+                "temperature": 0.7,
+                "max_tokens": max_tokens
+            },
             "error": None,
         }
+
+        print(f"Created debug entry: {entry['timestamp']}")
+        return entry
 
     def _call_openai_api(self, final_messages, model_name, max_tokens):
         """Call the OpenAI API and process the response."""
         print(f"About to call OpenAI API, debug_enabled={self.debug_enabled}")
         print(f"Client object: {self.openai_client}")
-        
+
         response = self.openai_client.chat.completions.create(
             model=model_name,
             messages=final_messages,
             temperature=0.7,
             max_tokens=max_tokens,
         )
-        
+
         # Handle the response safely in case it's not the expected object type
         if hasattr(response, 'choices') and len(response.choices) > 0:
             choice = response.choices[0]
@@ -267,18 +300,22 @@ class AIService:
     def _handle_ai_response_error(self, error, messages, debug_entry):
         """Handle errors from the API call."""
         error_msg = f"Error getting AI response: {str(error)}"
-        
+
         if self.debug_enabled:
             # Print for debugging
             print(f"Debug enabled: {self.debug_enabled}, Debug entry: {debug_entry}")
-            
+
             # If debug_entry wasn't initialized, create it now
             if debug_entry is None:
                 debug_entry = self._create_debug_entry(messages, "unknown", 0)
-                
+
             debug_entry["error"] = str(error)
             self.api_debug_logs.append(debug_entry)
-        
+
+            # Also add to game master logs if available
+            if self.game_master_debug_logs is not None:
+                self.game_master_debug_logs.append(debug_entry)
+
         # Call original error handler with caller info
         return self._handle_original_ai_response_error(error, caller_info={
             "function": "get_ai_response",
@@ -294,14 +331,14 @@ class AIService:
         debug_entry: Optional[Dict] = None
     ) -> str:
         """Handle errors from AI responses."""
-        import traceback
         import inspect
-        
+        import traceback
+
         # Get detailed error information
         error_type = type(e).__name__
         error_message = str(e)
         error_traceback = traceback.format_exc()
-        
+
         # Get the frame where the error occurred
         frames = inspect.trace()
         caller_frame = frames[0] if frames else None
@@ -311,16 +348,16 @@ class AIService:
             caller_file = frame_info.f_code.co_filename
             caller_line = frame_info.f_lineno
             caller_function = frame_info.f_code.co_name
-            caller_locals = {k: repr(v) for k, v in frame_info.f_locals.items() 
+            caller_locals = {k: repr(v) for k, v in frame_info.f_locals.items()
                          if k not in ['self', 'e'] and not k.startswith('__')}
             caller_info_str = f"Error occurred in {caller_file}:{caller_line}, function {caller_function}\n"
             caller_info_str += f"Local variables: {json.dumps(caller_locals, indent=2)}"
-        
+
         # Log detailed error information
         print(f"ERROR DETAILS\nType: {error_type}\nMessage: {error_message}")
         print(f"Traceback:\n{error_traceback}")
         print(f"Caller Info:\n{caller_info_str}")
-        
+
         # Store error info in debug entry if provided
         if debug_entry is not None:
             debug_entry["error"] = {
@@ -330,7 +367,11 @@ class AIService:
                 "caller_info": caller_info_str
             }
             self.api_debug_logs.append(debug_entry)
-            
+
+            # Also add to game master logs if available
+            if self.game_master_debug_logs is not None:
+                self.game_master_debug_logs.append(debug_entry)
+
         # Return a user-friendly error message
         return f"I apologize, but I encountered an error: {str(e)}"
 
@@ -387,7 +428,7 @@ class AIService:
 
             # Return empty function args and an error message instead of raising
             return {}, f"Error: {str(e)}"
-            
+
     def process_function_call_response(self, response_message):
         """Process a response containing a function call.
 
@@ -401,12 +442,12 @@ class AIService:
             # Debug logging
             print(f"Processing function call response: {response_message}")
             print(f"Response message type: {type(response_message)}")
-            
+
             if hasattr(response_message, 'function_call'):
                 function_call = response_message.function_call
                 function_name = function_call.name
                 function_args = json.loads(function_call.arguments)
-                
+
                 return function_name, function_args
             elif isinstance(response_message, dict) and 'function_call' in response_message:
                 function_call = response_message['function_call']
@@ -417,12 +458,12 @@ class AIService:
                     function_args = json.loads(function_args_str)
                 except json.JSONDecodeError:
                     function_args = {"raw_args": function_args_str}
-                
+
                 return function_name, function_args
             else:
                 print(f"No function call found in response: {response_message}")
                 return None, {}
-                
+
         except Exception as e:
             # Log the error but don't crash
             print(f"Error processing function call: {e}")

@@ -1,10 +1,10 @@
-import uuid
-import random
 import json
 import os
-from datetime import datetime
+import random
+import uuid
 from collections import defaultdict
-from typing import Dict, List, Tuple, Any
+from datetime import datetime
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity

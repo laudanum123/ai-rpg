@@ -65,37 +65,57 @@
                                 <div class="accordion-body">
                                     <h4>Request</h4>
                                     <div class="alert alert-secondary">
-                                        <h5>Model: {{ log.request.model }}</h5>
+                                        <h5>Model: {{ log.request.model if log.request and log.request.model else log.model }}</h5>
                                         <h5>Messages:</h5>
-                                        {% for message in log.request.messages %}
-                                            <div class="card mb-2">
-                                                <div class="card-header bg-info text-white">
-                                                    {{ message.role }}
+                                        {% if log.request and log.request.messages %}
+                                            {% for message in log.request.messages %}
+                                                <div class="card mb-2">
+                                                    <div class="card-header bg-info text-white">
+                                                        {{ message.role }}
+                                                    </div>
+                                                    <div class="card-body">
+                                                        <pre class="mb-0"><code>{{ message.content }}</code></pre>
+                                                    </div>
                                                 </div>
+                                            {% endfor %}
+                                        {% else %}
+                                            <div class="card mb-2">
+                                                <div class="card-header bg-warning text-white">Prompt</div>
                                                 <div class="card-body">
-                                                    <pre class="mb-0"><code>{{ message.content }}</code></pre>
+                                                    <pre class="mb-0"><code>{{ log.prompt }}</code></pre>
                                                 </div>
                                             </div>
-                                        {% endfor %}
-                                        <p><strong>Temperature:</strong> {{ log.request.temperature }}</p>
-                                        <p><strong>Max Tokens:</strong> {{ log.request.max_tokens }}</p>
+                                        {% endif %}
+                                        <p><strong>Temperature:</strong> {{ log.request.temperature if log.request else '0.7' }}</p>
+                                        <p><strong>Max Tokens:</strong> {{ log.request.max_tokens if log.request else log.max_tokens }}</p>
                                     </div>
 
                                     {% if log.error %}
                                         <h4>Error</h4>
                                         <div class="alert alert-danger">
-                                            {{ log.error }}
+                                            {% if log.error is mapping and log.error.message %}
+                                                <p><strong>Error Message:</strong> {{ log.error.message }}</p>
+                                                {% if log.error.type %}<p><strong>Error Type:</strong> {{ log.error.type }}</p>{% endif %}
+                                                {% if log.error.traceback %}<pre>{{ log.error.traceback }}</pre>{% endif %}
+                                            {% else %}
+                                                {{ log.error }}
+                                            {% endif %}
                                         </div>
                                     {% else %}
                                         <h4>Response</h4>
                                         <div class="alert alert-success">
-                                            {% if log.request.function_call and log.response.choices[0].message.function_call %}
-                                                <h5>Function Call</h5>
-                                                <p><strong>Function Name:</strong> {{ log.response.choices[0].message.function_call.name }}</p>
-                                                <h5>Arguments:</h5>
-                                                <pre class="mb-0"><code>{{ log.response.choices[0].message.function_call.arguments }}</code></pre>
+                                            {% if log.response is mapping and log.response.choices and log.response.choices[0].message %}
+                                                {% if log.request.function_call and log.response.choices[0].message.function_call %}
+                                                    <h5>Function Call</h5>
+                                                    <p><strong>Function Name:</strong> {{ log.response.choices[0].message.function_call.name }}</p>
+                                                    <h5>Arguments:</h5>
+                                                    <pre class="mb-0"><code>{{ log.response.choices[0].message.function_call.arguments }}</code></pre>
+                                                {% else %}
+                                                    <pre class="mb-0"><code>{{ log.response.choices[0].message.content }}</code></pre>
+                                                {% endif %}
                                             {% else %}
-                                                <pre class="mb-0"><code>{{ log.response.choices[0].message.content }}</code></pre>
+                                                <!-- Simple string response format -->
+                                                <pre class="mb-0"><code>{{ log.response }}</code></pre>
                                             {% endif %}
                                         </div>
                                     {% endif %}

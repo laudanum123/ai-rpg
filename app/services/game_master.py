@@ -15,6 +15,7 @@ from app.services.ai_service import AIService
 from app.services.character_service import CharacterService
 from app.services.game_state_service import GameStateService
 from app.services.memory_graph import MemoryGraph
+from app.services.memory_service import MemoryService
 
 
 class GameMaster:
@@ -28,7 +29,15 @@ class GameMaster:
         # Store for API debug messages (max 50 entries)
         self.api_debug_logs = deque(maxlen=50)
         self.debug_enabled = debug_enabled
-        self.memory_graphs = {}
+
+        # Try to get debug setting from Flask app config if available
+        try:
+            from flask import current_app
+            if current_app:
+                self.debug_enabled = current_app.config.get("API_DEBUG", debug_enabled)
+        except (ImportError, RuntimeError):
+            # This happens when Flask app context is not available
+            pass
 
         # System prompt for the AI game master
         self.system_prompt = """You are an experienced Game Master for a fantasy RPG game.
@@ -37,15 +46,22 @@ class GameMaster:
         Always stay in character as a GM and maintain consistency in the game world.
         Focus on creating an immersive experience while following the game's rules."""  # noqa: E501
 
-        # Set up AIService
-        self.ai_service = AIService(self.openai_client, self.system_prompt)
-
         # Base configuration for memory graphs
         self.memory_graph_config = {
             "openai_client": self.openai_client,
             "embedding_model": "text-embedding-3-large",
             "llm_model": "gpt-4o-mini",
         }
+
+        # Set up services
+        self.ai_service = AIService(self.openai_client, self.system_prompt, game_master_debug_logs=self.api_debug_logs)
+
+        # Make sure AIService debug state matches our own
+        self.ai_service.debug_enabled = self.debug_enabled
+        print(f"GameMaster initialized with debug_enabled={self.debug_enabled}")
+        print(f"AIService debug_enabled={self.ai_service.debug_enabled}")
+
+        self.memory_service = MemoryService(self.openai_client, self.memory_graph_config)
 
     def get_session_memory_graph(self, session_id: str) -> MemoryGraph:
         """Get or create a memory graph for the specified session.
@@ -56,31 +72,7 @@ class GameMaster:
         Returns:
             The memory graph for this session
         """
-        if session_id not in self.memory_graphs:
-            # Create a new memory graph for this session with
-            # a session-specific storage directory
-            storage_dir = f"data/memory_graph/{session_id}"
-            memory_graph = MemoryGraph(
-                openai_client=self.memory_graph_config["openai_client"],
-                embedding_model=self.memory_graph_config["embedding_model"],
-                llm_model=self.memory_graph_config["llm_model"],
-                storage_dir=storage_dir,
-            )
-
-            # Attempt to load existing memories for this session if available
-            try:
-                memory_graph.load()
-                print(
-                    f"Loaded memory graph for session {session_id} with {len(memory_graph.nodes)} nodes"  # noqa: E501
-                )
-            except Exception as e:
-                print(
-                    f"No existing memory graph found for session {session_id} or error loading: {e}"  # noqa: E501
-                )
-
-            self.memory_graphs[session_id] = memory_graph
-
-        return self.memory_graphs[session_id]
+        return self.memory_service.get_session_memory_graph(session_id)
 
     def delete_memory_node(self, session_id: str, node_id: str) -> bool:
         """Delete a specific memory node from a session's memory graph.
@@ -92,16 +84,12 @@ class GameMaster:
         Returns:
             True if the node was deleted successfully, False otherwise
         """
-        # Get the memory graph for this session
-        memory_graph = self.get_session_memory_graph(session_id)
-
-        # Attempt to delete the node
-        return memory_graph.delete_node(node_id)
+        return self.memory_service.delete_memory_node(session_id, node_id)
 
     def get_memory_nodes(
         self, session_id: str, sort_by: str = "timestamp", reverse: bool = True
-    ) -> List[Dict[str, Any]]:
-        """Get all memory nodes for a session, optionally sorted.
+    ) -> List[Dict]:
+        """Get all memory nodes for a session, with optional sorting.
 
         Args:
             session_id: The game session ID
@@ -109,25 +97,23 @@ class GameMaster:
             reverse: If True, sort in descending order
 
         Returns:
-            List of memory nodes as dictionaries
+            List of memory nodes
         """
-        memory_graph = self.get_session_memory_graph(session_id)
-        return memory_graph.get_all_nodes(sort_by, reverse)
+        return self.memory_service.get_memory_nodes(session_id, sort_by, reverse)
 
     def get_node_relations(
         self, session_id: str, node_id: str
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """Get all relations for a specific memory node.
+    ) -> List[Dict]:
+        """Get relations for a specific node.
 
         Args:
             session_id: The game session ID
-            node_id: The ID of the memory node
+            node_id: The node ID to get relations for
 
         Returns:
-            Dictionary with incoming and outgoing relations
+            List of related nodes with relationship info
         """
-        memory_graph = self.get_session_memory_graph(session_id)
-        return memory_graph.get_node_relations(node_id)
+        return self.memory_service.get_node_relations(session_id, node_id)
 
     def parse_combat_result(self, ai_response: str) -> Dict[str, Any]:
         """Parse combat results from an AI response.
@@ -204,27 +190,55 @@ class GameMaster:
             max_tokens: Maximum tokens for the response
 
         Returns:
-            AI model's response text
+            AI model's response text or error message if an exception occurs
         """
-        # Get the memory graph if we have a session ID
-        memory_graph = None
-        if session_id:
-            memory_graph = self.get_session_memory_graph(session_id)
+        try:
+            # Get the memory graph if we have a session ID
+            memory_graph = None
+            if session_id:
+                memory_graph = self.get_session_memory_graph(session_id)
 
-        # Create game state service instance
-        game_state_service = GameStateService()
+            # Create game state service instance
+            game_state_service = GameStateService()
 
-        # Delegate to the AI service
-        return self.ai_service.get_ai_response(
-            messages,
-            session_id,
-            recent_history_turns,
-            model_name,
-            max_tokens,
-            memory_graph,
-            game_state_service
-        )
-        
+            # Delegate to the AI service
+            return self.ai_service.get_ai_response(
+                messages,
+                session_id,
+                recent_history_turns,
+                model_name,
+                max_tokens,
+                memory_graph,
+                game_state_service
+            )
+        except Exception as e:
+            # Log the error if debug is enabled
+            # Try to check Flask app config first, fall back to instance variable
+            debug_enabled = False
+            try:
+                from flask import current_app
+                if current_app:
+                    debug_enabled = current_app.config.get("API_DEBUG", self.debug_enabled)
+                else:
+                    debug_enabled = self.debug_enabled
+            except (ImportError, RuntimeError):
+                debug_enabled = self.debug_enabled
+
+            if debug_enabled:
+                error_msg = str(e)
+                debug_entry = {
+                    "timestamp": datetime.now().isoformat(),
+                    "model": model_name,
+                    "prompt": messages[0]["content"] if isinstance(messages, list) and len(messages) > 0 and isinstance(messages[0], dict) else str(messages),
+                    "error": error_msg
+                }
+                print(f"Debug entry: {debug_entry}")
+                self.api_debug_logs.append(debug_entry)
+                print(f"Error in get_ai_response: {error_msg}")
+
+            # Return an error message
+            return f"I apologize, but I encountered an error: {str(e)}"
+
     def start_game(
         self, character: Character, game_world: str, session_id: str = None
     ) -> str:
@@ -315,7 +329,11 @@ class GameMaster:
 
         except Exception as e:
             # Handle errors
-            return self._handle_ai_response_error(e, debug_entry if 'debug_entry' in locals() else None)
+            logging.error(f"Error processing action: {str(e)}")
+            if 'debug_entry' in locals() and debug_entry is not None:
+                debug_entry["error"] = str(e)
+                self.api_debug_logs.append(debug_entry)
+            return f"Error: {str(e)}"
 
     def _prepare_action_messages(self, session: "GameSession", character: Character,
                                action: str, npcs_present: List[Dict] = None) -> List[Dict[str, Any]]:
@@ -429,29 +447,24 @@ class GameMaster:
         return messages
 
     def _add_memory_context(self, messages: List[Dict[str, Any]], memory_graph,
-                          character: Character, session: "GameSession") -> List[Dict[str, Any]]:
+                           character: Character, session: "GameSession") -> List[Dict[str, Any]]:
         """Add relevant context from the memory graph to the messages."""
-        # Skip if no memory graph
-        if not memory_graph:
+        # Skip if no memory graph or character
+        if not memory_graph or not character:
             return messages
 
-        # Query relevant memories
-        action_text = messages[-1]["content"]
-        relevant_nodes = memory_graph.get_relevant_context(action_text)
+        # Get the query from the latest user message
+        query = None
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                query = msg.get("content", "")
+                break
 
-        if relevant_nodes:
-            memory_context = "Relevant memories:\n"
-            for node in relevant_nodes:
-                # Handle both MemoryNode objects and strings
-                if hasattr(node, 'content'):
-                    # It's a MemoryNode object
-                    memory_context += f"- {node.content}\n"
-                else:
-                    # It's already a string
-                    memory_context += f"- {node}\n"
+        if not query:
+            return messages
 
-            # Insert memory context after system message
-            messages.insert(1, {"role": "system", "content": memory_context})
+        # Use memory service to add context (modifies messages in-place)
+        self.memory_service.add_memory_context(messages, memory_graph, character, query)
 
         # Add quest information if available
         if hasattr(session, "active_quests") and session.active_quests:
@@ -602,27 +615,20 @@ class GameMaster:
         Returns:
             Tuple of (function_args, text_response)
         """
-        try:
-            # Default parameters for the API call
-            model_name = "gpt-4o-mini"
-            max_tokens = 1000
-            temperature = 0.7
-            
-            # Delegate to AIService
-            return self.ai_service.get_structured_ai_response(
-                messages=messages,
-                schema=schema,
-                debug_entry=debug_entry,
-                model_name=model_name,
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-        except Exception as e:
-            logging.error(f"Error getting structured AI response: {str(e)}")
-            if debug_entry is not None:
-                debug_entry["error"] = str(e)
-                self.api_debug_logs.append(debug_entry)
-            return {}, f"Error: {str(e)}"
+        # Default parameters for the API call
+        model_name = "gpt-4o-mini"
+        max_tokens = 1000
+        temperature = 0.7
+
+        # Delegate to AIService
+        return self.ai_service.get_structured_ai_response(
+            messages=messages,
+            schema=schema,
+            debug_entry=debug_entry,
+            model_name=model_name,
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
 
     def _process_structured_ai_response(
         self,
@@ -1075,33 +1081,11 @@ class GameMaster:
 
     def _add_interaction_to_memory(self, session: "GameSession", character: Character, function_args: Dict):
         """Add the current interaction to the memory graph."""
-        if not hasattr(session, "id"):
+        if not hasattr(session, "id") or not character:
             return
 
-        memory_graph = self.get_session_memory_graph(session.id)
-
-        # Create a summary of the interaction
-        interaction_summary = function_args.get("message", "")
-        if len(interaction_summary) > 300:
-            interaction_summary = interaction_summary[:297] + "..."
-
-        # Determine importance based on content
-        importance = 0.5  # Default importance
-
-        # Detect if this is an important event (quest, combat, etc.)
-        important_keywords = ["quest", "mission", "battle", "fight", "found", "discovered", "treasure", "secret"]
-        if any(keyword in interaction_summary.lower() for keyword in important_keywords):
-            importance = 0.8
-
-        # Add this interaction to memory
-        memory_graph.add_node(
-            content=interaction_summary,
-            node_type="interaction",
-            importance=importance,
-        )
-
-        # Save the memory graph
-        memory_graph.save()
+        # Delegate to memory service
+        self.memory_service.add_interaction_to_memory(session, character, function_args)
 
     def generate_npc(self, npc_type: str, location: str) -> NPC:
         """Generate a new NPC.

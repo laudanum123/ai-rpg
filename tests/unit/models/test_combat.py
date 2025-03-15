@@ -1,7 +1,6 @@
-import pytest
-import json
 from unittest.mock import patch
-from app.models.combat import Enemy, CombatEncounter, roll_dice
+
+from app.models.combat import CombatEncounter, Enemy, roll_dice
 
 
 def test_enemy_creation():
@@ -25,7 +24,7 @@ def test_enemy_creation():
         experience_reward=25,
         gold_reward=5
     )
-    
+
     assert enemy.id == "test-enemy-1"
     assert enemy.name == "Goblin"
     assert enemy.description == "A small, green creature"
@@ -63,9 +62,9 @@ def test_enemy_to_dict():
         wisdom=11,
         charisma=10
     )
-    
+
     enemy_dict = enemy.to_dict()
-    
+
     assert isinstance(enemy_dict, dict)
     assert enemy_dict["name"] == "Orc"
     assert enemy_dict["description"] == "A brutish humanoid"
@@ -94,9 +93,9 @@ def test_enemy_from_dict():
         "attacks": [{"name": "Shortsword", "damage_dice": "1d6"}],
         "experience_reward": 50
     }
-    
+
     enemy = Enemy.from_dict(enemy_data)
-    
+
     assert enemy.id == "test-enemy-2"
     assert enemy.name == "Skeleton"
     assert enemy.health == 15
@@ -122,14 +121,14 @@ def test_enemy_get_ability_modifier():
         wisdom=10,  # Modifier should be +0
         charisma=6,  # Modifier should be -2
     )
-    
+
     assert enemy.get_ability_modifier("strength") == 3
     assert enemy.get_ability_modifier("dexterity") == 2
     assert enemy.get_ability_modifier("constitution") == 1
     assert enemy.get_ability_modifier("intelligence") == -1
     assert enemy.get_ability_modifier("wisdom") == 0
     assert enemy.get_ability_modifier("charisma") == -2
-    
+
     # Test with non-existent ability (should default to modifier for 10)
     assert enemy.get_ability_modifier("nonexistent") == 0
 
@@ -139,7 +138,7 @@ def test_enemy_roll_attack_default(mock_randint):
     """Test enemy's default attack roll when no attacks are specified."""
     # Set fixed values for dice rolls
     mock_randint.return_value = 15
-    
+
     enemy = Enemy(
         name="Test Enemy",
         description="For testing",
@@ -154,9 +153,9 @@ def test_enemy_roll_attack_default(mock_randint):
         charisma=10,
         attacks=[]  # No attacks defined, will use default
     )
-    
+
     attack_result = enemy.roll_attack()
-    
+
     assert attack_result["attack_name"] == "Strike"
     assert attack_result["to_hit_roll"] == 15
     assert attack_result["to_hit_bonus"] == 2  # Strength modifier
@@ -172,7 +171,7 @@ def test_enemy_roll_attack_specific(mock_randint):
     # 1. For the to_hit roll
     # 2. For each damage dice roll
     mock_randint.side_effect = [18, 4, 5]  # to_hit roll, then damage dice rolls
-    
+
     enemy = Enemy(
         name="Test Enemy",
         description="For testing",
@@ -194,9 +193,9 @@ def test_enemy_roll_attack_specific(mock_randint):
             }
         ]
     )
-    
+
     attack_result = enemy.roll_attack("Greataxe")
-    
+
     assert attack_result["attack_name"] == "Greataxe"
     assert attack_result["to_hit_roll"] == 18
     assert attack_result["to_hit_bonus"] == 5
@@ -221,13 +220,13 @@ def test_enemy_take_damage():
         wisdom=10,
         charisma=10
     )
-    
+
     initial_health = enemy.health
-    
+
     # Test normal damage
     enemy.take_damage(10)
     assert enemy.health == initial_health - 10
-    
+
     # Test excessive damage
     enemy.take_damage(enemy.health + 10)
     assert enemy.health == 0
@@ -249,10 +248,10 @@ def test_enemy_is_alive():
         wisdom=10,
         charisma=10
     )
-    
+
     # Initially alive
     assert enemy.is_alive()
-    
+
     # After taking damage that reduces health to 0
     enemy.take_damage(1)
     assert not enemy.is_alive()
@@ -273,7 +272,7 @@ def test_combat_encounter_creation():
         wisdom=8,
         charisma=8
     )
-    
+
     orc = Enemy(
         name="Orc",
         description="A brutish humanoid",
@@ -287,7 +286,7 @@ def test_combat_encounter_creation():
         wisdom=11,
         charisma=10
     )
-    
+
     encounter = CombatEncounter(
         enemies=[goblin, orc],
         difficulty="hard",
@@ -295,7 +294,7 @@ def test_combat_encounter_creation():
         description="A goblin and orc patrol",
         special_rules=["Surprise attack: Enemies get advantage on first round"]
     )
-    
+
     assert len(encounter.enemies) == 2
     assert encounter.enemies[0].name == "Goblin"
     assert encounter.enemies[1].name == "Orc"
@@ -321,15 +320,15 @@ def test_combat_encounter_to_dict():
         wisdom=8,
         charisma=8
     )
-    
+
     encounter = CombatEncounter(
         enemies=[goblin],
         difficulty="normal",
         environment="cave"
     )
-    
+
     encounter_dict = encounter.to_dict()
-    
+
     assert isinstance(encounter_dict, dict)
     assert len(encounter_dict["enemies"]) == 1
     assert encounter_dict["enemies"][0]["name"] == "Goblin"
@@ -374,9 +373,9 @@ def test_combat_encounter_from_dict():
         "description": "The restless dead have risen",
         "special_rules": ["Undead fortitude: Zombies have a chance to survive lethal damage"]
     }
-    
+
     encounter = CombatEncounter.from_dict(encounter_data)
-    
+
     assert encounter.id == "test-encounter-1"
     assert len(encounter.enemies) == 2
     assert encounter.enemies[0].name == "Zombie"
@@ -403,7 +402,7 @@ def test_combat_encounter_get_total_xp():
         charisma=8,
         experience_reward=25
     )
-    
+
     orc = Enemy(
         name="Orc",
         description="A brutish humanoid",
@@ -418,9 +417,9 @@ def test_combat_encounter_get_total_xp():
         charisma=10,
         experience_reward=100
     )
-    
+
     encounter = CombatEncounter(enemies=[goblin, orc])
-    
+
     assert encounter.get_total_xp() == 125  # 25 + 100
 
 
@@ -440,7 +439,7 @@ def test_combat_encounter_get_total_gold():
         charisma=8,
         gold_reward=5
     )
-    
+
     orc = Enemy(
         name="Orc",
         description="A brutish humanoid",
@@ -455,9 +454,9 @@ def test_combat_encounter_get_total_gold():
         charisma=10,
         gold_reward=15
     )
-    
+
     encounter = CombatEncounter(enemies=[goblin, orc])
-    
+
     assert encounter.get_total_gold() == 20  # 5 + 15
 
 
@@ -476,7 +475,7 @@ def test_combat_encounter_all_enemies_defeated():
         wisdom=8,
         charisma=8
     )
-    
+
     orc = Enemy(
         name="Orc",
         description="A brutish humanoid",
@@ -490,16 +489,16 @@ def test_combat_encounter_all_enemies_defeated():
         wisdom=11,
         charisma=10
     )
-    
+
     encounter = CombatEncounter(enemies=[goblin, orc])
-    
+
     # Initially, no enemies are defeated
     assert not encounter.all_enemies_defeated()
-    
+
     # Defeat one enemy
     goblin.take_damage(goblin.health)
     assert not encounter.all_enemies_defeated()
-    
+
     # Defeat all enemies
     orc.take_damage(orc.health)
     assert encounter.all_enemies_defeated()
@@ -520,7 +519,7 @@ def test_combat_encounter_get_active_enemies():
         wisdom=8,
         charisma=8
     )
-    
+
     orc = Enemy(
         name="Orc",
         description="A brutish humanoid",
@@ -534,7 +533,7 @@ def test_combat_encounter_get_active_enemies():
         wisdom=11,
         charisma=10
     )
-    
+
     skeleton = Enemy(
         name="Skeleton",
         description="An animated pile of bones",
@@ -548,13 +547,13 @@ def test_combat_encounter_get_active_enemies():
         wisdom=8,
         charisma=5
     )
-    
+
     encounter = CombatEncounter(enemies=[goblin, orc, skeleton])
-    
+
     # Initially, all enemies are active
     active_enemies = encounter.get_active_enemies()
     assert len(active_enemies) == 3
-    
+
     # Defeat one enemy
     goblin.take_damage(goblin.health)
     active_enemies = encounter.get_active_enemies()
@@ -562,7 +561,7 @@ def test_combat_encounter_get_active_enemies():
     assert goblin not in active_enemies
     assert orc in active_enemies
     assert skeleton in active_enemies
-    
+
     # Defeat another enemy
     skeleton.take_damage(skeleton.health)
     active_enemies = encounter.get_active_enemies()
@@ -574,9 +573,9 @@ def test_combat_encounter_get_active_enemies():
 def test_roll_dice_simple(mock_randint):
     """Test rolling dice with a simple notation (e.g., '2d6')."""
     mock_randint.side_effect = [3, 5]  # Two d6 rolls
-    
+
     result = roll_dice("2d6")
-    
+
     assert result == 8  # 3 + 5
 
 
@@ -584,9 +583,9 @@ def test_roll_dice_simple(mock_randint):
 def test_roll_dice_with_bonus(mock_randint):
     """Test rolling dice with a bonus (e.g., '1d20+5')."""
     mock_randint.return_value = 15  # One d20 roll
-    
+
     result = roll_dice("1d20+5")
-    
+
     assert result == 20  # 15 + 5
 
 
@@ -594,9 +593,9 @@ def test_roll_dice_with_bonus(mock_randint):
 def test_roll_dice_with_penalty(mock_randint):
     """Test rolling dice with a penalty (e.g., '1d20-2')."""
     mock_randint.return_value = 10  # One d20 roll
-    
+
     result = roll_dice("1d20-2")
-    
+
     assert result == 8  # 10 - 2
 
 
@@ -604,7 +603,7 @@ def test_roll_dice_with_penalty(mock_randint):
 def test_roll_dice_minimum_zero(mock_randint):
     """Test that dice rolls have a minimum result of 0 even with penalties."""
     mock_randint.return_value = 1  # One d4 roll
-    
+
     result = roll_dice("1d4-5")
-    
+
     assert result == 0  # 1 - 5 would be -4, but minimum is 0

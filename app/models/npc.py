@@ -1,8 +1,8 @@
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
-import uuid
 import json
 import random
+import uuid
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 
 @dataclass
