@@ -105,7 +105,7 @@
                                         <h4>Response</h4>
                                         <div class="alert alert-success">
                                             {% if log.response is mapping and log.response.choices and log.response.choices[0].message %}
-                                                {% if log.request.function_call and log.response.choices[0].message.function_call %}
+                                                {% if log.response is mapping and log.response.choices and log.response.choices[0].message.function_call and log.request is defined and log.request.function_call is defined %}
                                                     <h5>Function Call</h5>
                                                     <p><strong>Function Name:</strong> {{ log.response.choices[0].message.function_call.name }}</p>
                                                     <h5>Arguments:</h5>

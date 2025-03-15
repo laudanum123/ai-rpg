@@ -344,9 +344,8 @@ def debug():
             current_app.config["API_DEBUG"] = not current_app.config.get(
                 "API_DEBUG", False
             )
-            # Explicitly set debug mode on AIService
+            # Set debug mode only on GameMaster (it will propagate to AIService)
             debug_status = current_app.config["API_DEBUG"]
-            game_master.ai_service.debug_enabled = debug_status
             game_master.debug_enabled = debug_status
 
             # Add a test log entry if enabling debug
@@ -355,41 +354,29 @@ def debug():
                     "timestamp": datetime.now().isoformat(),
                     "session_id": "test",
                     "model": "test-model",
-                    "request": {
-                        "model": "test-model",
-                        "messages": [{"role": "system", "content": "Test debug entry"}],
-                        "temperature": 0.7,
-                        "max_tokens": 100
-                    },
-                    "response": "This is a test debug entry to verify logging works."
+                    "prompt": "Test debug entry",
+                    "response": "This is a test debug entry to verify logging works.",
                 }
-                game_master.ai_service.api_debug_logs.append(test_entry)
-                print(f"Added test entry to debug logs, count: {len(game_master.ai_service.api_debug_logs)}")  # noqa: E501
+                game_master.api_debug_logs.append(test_entry)
+                print(f"Added test entry to debug logs")
 
             status = "enabled" if debug_status else "disabled"
             flash(f"API debug mode {status}")
         elif "clear_logs" in request.form:
-            # Clear logs from AIService and game_master
-            game_master.ai_service.api_debug_logs.clear()
+            # Clear logs (only need to clear GameMaster logs now)
             if hasattr(game_master, 'api_debug_logs'):
                 game_master.api_debug_logs.clear()
             flash("Debug logs cleared")
 
         return redirect(url_for("main.debug"))
 
-    # Get fresh logs from AIService
-    api_logs = list(game_master.ai_service.api_debug_logs)
-    print(f"Debug page loaded: {len(api_logs)} log entries found")
-    for i, log in enumerate(api_logs):
-        print(f"  Log {i+1}: {log.get('timestamp', 'no timestamp')}")
-
-    # Also check if there are logs in game_master directly
-    gm_logs = []
+    # Get logs from GameMaster (single source of truth)
+    api_logs = []
     if hasattr(game_master, 'api_debug_logs'):
-        gm_logs = list(game_master.api_debug_logs)
-        if gm_logs and not api_logs:
-            print("Found logs in game_master but not in AIService, using those instead")
-            api_logs = gm_logs
+        api_logs = list(game_master.api_debug_logs)
+        print(f"Debug page loaded: {len(api_logs)} log entries found")
+        for i, log in enumerate(api_logs):
+            print(f"  Log {i+1}: {log.get('timestamp', 'no timestamp')}")
 
     return render_template(
         "debug.html",

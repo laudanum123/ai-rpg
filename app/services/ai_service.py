@@ -18,30 +18,22 @@ class AIService:
     preparing prompts, sending requests, and processing responses.
     """
 
-    def __init__(self, openai_client, system_prompt, game_master_debug_logs=None):
+    def __init__(self, openai_client, system_prompt, game_master_debug_logs=None, debug_enabled=False):
         """
         Initialize the AI service.
         
         Args:
             openai_client: The OpenAI client instance
             system_prompt: The system prompt to use for AI interactions
-            game_master_debug_logs: Optional reference to GameMaster's debug logs collection
+            game_master_debug_logs: Reference to GameMaster's debug logs collection
+            debug_enabled: Whether debug mode is enabled, controlled by GameMaster
         """
         self.openai_client = openai_client
         self.system_prompt = system_prompt
-        self.api_debug_logs = []
-        self.game_master_debug_logs = game_master_debug_logs
-
-        # Initialize debug settings immediately
-        self.debug_enabled = False
-        try:
-            from flask import current_app
-            if current_app:
-                self.debug_enabled = current_app.config.get("API_DEBUG", False)
-                print(f"AIService initialized with debug_enabled={self.debug_enabled}")
-        except (ImportError, RuntimeError):
-            # This happens when Flask app context is not available
-            pass
+        self.api_debug_logs = game_master_debug_logs  # Store reference to GameMaster's logs
+        self.debug_enabled = debug_enabled  # Initialize with value from GameMaster
+        
+        print(f"AIService initialized with debug_enabled={self.debug_enabled}")
 
     def get_ai_response(
         self,
@@ -67,8 +59,9 @@ class AIService:
         Returns:
             AI model's response text
         """  # noqa: E501
-        self._initialize_debug_settings()
-        self._log_request_debug_info(messages, session_id, model_name)
+        # Log request debug info if needed
+        if self.debug_enabled:
+            self._log_request_debug_info(messages, session_id, model_name)
 
         # Convert string message to proper format if needed
         processed_messages = self._normalize_messages(messages)
@@ -87,37 +80,29 @@ class AIService:
 
             # Store response data if debug is enabled
             if self.debug_enabled and debug_entry is not None:
-                debug_entry["response"] = response_content
+                # Format response to match the structure expected by the debug.html template
+                debug_entry["response"] = {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": response_content,
+                                "role": "assistant"
+                            }
+                        }
+                    ]
+                }
                 debug_entry["session_id"] = session_id
                 debug_entry["request"]["messages"] = final_messages
 
-                # Add to internal logs
-                print(f"Adding successful API call to debug logs, log count={len(self.api_debug_logs)+1}")
-                self.api_debug_logs.append(debug_entry)
-
-                # Also add to game master logs if available
-                if self.game_master_debug_logs is not None:
-                    self.game_master_debug_logs.append(debug_entry.copy())  # Use copy to avoid reference issues
+                # Add to debug logs
+                if self.api_debug_logs is not None:
+                    print("Adding successful API call to debug logs")
+                    self.api_debug_logs.append(debug_entry)
 
             return response_content
 
         except Exception as e:
             return self._handle_ai_response_error(e, messages, debug_entry)
-
-    def _initialize_debug_settings(self):
-        """Initialize debug settings if they haven't been set."""
-        if not hasattr(self, 'api_debug_logs'):
-            self.api_debug_logs = []
-
-        # Always check app config to get the latest setting
-        try:
-            old_debug = self.debug_enabled
-            self.debug_enabled = current_app.config.get("API_DEBUG", False)
-            if old_debug != self.debug_enabled:
-                print(f"Debug setting changed: {old_debug} -> {self.debug_enabled}")
-        except RuntimeError:
-            # Not in an application context
-            print("No application context available for debug settings")
 
     def _log_request_debug_info(self, messages, session_id, model_name):
         """Log debug information about the request."""
@@ -245,25 +230,42 @@ class AIService:
 
     def _create_debug_entry(self, messages, model_name, max_tokens):
         """Create a debug entry for logging API interactions."""
-        # Extract prompt based on message format
-        prompt_content = messages
-        if not isinstance(messages, str):
-            if isinstance(messages, list) and len(messages) > 0 and isinstance(messages[0], dict) and "content" in messages[0]:
-                prompt_content = messages[0]["content"]
+        # Extract the user's prompt appropriately based on message format
+        prompt_content = ""
+        
+        # Handle string messages
+        if isinstance(messages, str):
+            prompt_content = messages
+            # Create a properly formatted message for the debug UI
+            formatted_messages = [{"role": "user", "content": messages}]
+        # Handle list of message dictionaries
+        elif isinstance(messages, list) and len(messages) > 0:
+            # Find the user message(s)
+            user_messages = [msg for msg in messages if msg.get("role") == "user"]
+            if user_messages:
+                # Use the most recent user message for prompt display
+                prompt_content = user_messages[-1].get("content", "")
             else:
+                # Fallback if no user message found
                 prompt_content = str(messages)
+            # Use the original message list for formatted display
+            formatted_messages = messages
+        else:
+            # Fallback for any other case
+            prompt_content = str(messages)
+            formatted_messages = [{"role": "user", "content": prompt_content}]
 
         # Create a debug entry that matches the expected format in debug.html template
         entry = {
             "timestamp": datetime.now().isoformat(),
             "model": model_name,
-            "prompt": prompt_content,
+            "prompt": prompt_content,  # This is for backward compatibility
             "max_tokens": max_tokens,
             "temperature": 0.7,
             "response": None,
             "request": {
                 "model": model_name,
-                "messages": [],  # Will be populated later with final messages
+                "messages": formatted_messages,  # This ensures proper message display in the debug UI
                 "temperature": 0.7,
                 "max_tokens": max_tokens
             },
@@ -299,7 +301,6 @@ class AIService:
 
     def _handle_ai_response_error(self, error, messages, debug_entry):
         """Handle errors from the API call."""
-        error_msg = f"Error getting AI response: {str(error)}"
 
         if self.debug_enabled:
             # Print for debugging
@@ -310,11 +311,10 @@ class AIService:
                 debug_entry = self._create_debug_entry(messages, "unknown", 0)
 
             debug_entry["error"] = str(error)
-            self.api_debug_logs.append(debug_entry)
 
-            # Also add to game master logs if available
-            if self.game_master_debug_logs is not None:
-                self.game_master_debug_logs.append(debug_entry)
+            # Add to debug logs
+            if self.api_debug_logs is not None:
+                self.api_debug_logs.append(debug_entry)
 
         # Call original error handler with caller info
         return self._handle_original_ai_response_error(error, caller_info={
@@ -366,11 +366,10 @@ class AIService:
                 "traceback": error_traceback,
                 "caller_info": caller_info_str
             }
-            self.api_debug_logs.append(debug_entry)
 
-            # Also add to game master logs if available
-            if self.game_master_debug_logs is not None:
-                self.game_master_debug_logs.append(debug_entry)
+            # Add to debug logs
+            if self.api_debug_logs is not None:
+                self.api_debug_logs.append(debug_entry)
 
         # Return a user-friendly error message
         return f"I apologize, but I encountered an error: {str(e)}"
@@ -415,7 +414,15 @@ class AIService:
 
             # If debugging, store the response
             if debug_entry is not None:
-                debug_entry["response"] = response
+                debug_entry["response"] = {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": text_response
+                            }
+                        }
+                    ]
+                }
                 self.api_debug_logs.append(debug_entry)
 
             return function_args, text_response

@@ -28,13 +28,13 @@ class GameMaster:
 
         # Store for API debug messages (max 50 entries)
         self.api_debug_logs = deque(maxlen=50)
-        self.debug_enabled = debug_enabled
+        self._debug_enabled = debug_enabled
 
         # Try to get debug setting from Flask app config if available
         try:
             from flask import current_app
             if current_app:
-                self.debug_enabled = current_app.config.get("API_DEBUG", debug_enabled)
+                self._debug_enabled = current_app.config.get("API_DEBUG", debug_enabled)
         except (ImportError, RuntimeError):
             # This happens when Flask app context is not available
             pass
@@ -53,16 +53,32 @@ class GameMaster:
             "llm_model": "gpt-4o-mini",
         }
 
-        # Set up services
-        self.ai_service = AIService(self.openai_client, self.system_prompt, game_master_debug_logs=self.api_debug_logs)
-
-        # Make sure AIService debug state matches our own
-        self.ai_service.debug_enabled = self.debug_enabled
-        print(f"GameMaster initialized with debug_enabled={self.debug_enabled}")
+        # Set up services with our settings
+        self.ai_service = AIService(
+            openai_client=self.openai_client,
+            system_prompt=self.system_prompt,
+            game_master_debug_logs=self.api_debug_logs,
+            debug_enabled=self._debug_enabled
+        )
+        
+        print(f"GameMaster initialized with debug_enabled={self._debug_enabled}")
         print(f"AIService debug_enabled={self.ai_service.debug_enabled}")
 
         self.memory_service = MemoryService(self.openai_client, self.memory_graph_config)
 
+    @property
+    def debug_enabled(self):
+        """Property getter for debug_enabled."""
+        return self._debug_enabled
+        
+    @debug_enabled.setter
+    def debug_enabled(self, value):
+        """Property setter for debug_enabled that also updates AIService."""
+        self._debug_enabled = value
+        if hasattr(self, 'ai_service'):
+            self.ai_service.debug_enabled = value
+            print(f"Debug state updated: {value}")
+            
     def get_session_memory_graph(self, session_id: str) -> MemoryGraph:
         """Get or create a memory graph for the specified session.
 
