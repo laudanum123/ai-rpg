@@ -5,13 +5,13 @@ from collections import deque
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from flask import current_app
 from openai import OpenAI
 
 from app.models.character import Character
 from app.models.combat import CombatEncounter, Enemy, roll_dice
 from app.models.game_session import GameSession
 from app.models.npc import NPC
+from app.services.ai_service import AIService
 from app.services.character_service import CharacterService
 from app.services.game_state_service import GameStateService
 from app.services.memory_graph import MemoryGraph
@@ -30,19 +30,22 @@ class GameMaster:
         self.debug_enabled = debug_enabled
         self.memory_graphs = {}
 
-        # Base configuration for memory graphs
-        self.memory_graph_config = {
-            "openai_client": self.openai_client,
-            "embedding_model": "text-embedding-3-large",
-            "llm_model": "gpt-4o-mini",
-        }
-
         # System prompt for the AI game master
         self.system_prompt = """You are an experienced Game Master for a fantasy RPG game.
         Your role is to create an engaging and dynamic adventure, manage NPCs, describe
         locations vividly, create interesting plot hooks, and run combat encounters.
         Always stay in character as a GM and maintain consistency in the game world.
         Focus on creating an immersive experience while following the game's rules."""  # noqa: E501
+
+        # Set up AIService
+        self.ai_service = AIService(self.openai_client, self.system_prompt)
+
+        # Base configuration for memory graphs
+        self.memory_graph_config = {
+            "openai_client": self.openai_client,
+            "embedding_model": "text-embedding-3-large",
+            "llm_model": "gpt-4o-mini",
+        }
 
     def get_session_memory_graph(self, session_id: str) -> MemoryGraph:
         """Get or create a memory graph for the specified session.
@@ -169,6 +172,18 @@ class GameMaster:
 
         return result
 
+    # Removed _extract_current_situation method (moved to AIService)
+
+    # Removed _get_current_user_query method (moved to AIService)
+
+    # Removed _create_debug_entry method (moved to AIService)
+
+    # Removed _call_openai_api method (moved to AIService)
+
+    # Removed _handle_ai_response_error method (moved to AIService)
+
+    # Removed _handle_original_ai_response_error method (moved to AIService)
+
     def get_ai_response(
         self,
         messages: List[Dict] or str,
@@ -177,225 +192,39 @@ class GameMaster:
         model_name: str = "gpt-4o-mini",
         max_tokens: int = 2000,
     ) -> str:
-        # Debug logging to trace the error
-        print("DEBUG - get_ai_response called with:")
-        print(f"  - messages type: {type(messages)}")
-        if isinstance(messages, list) and len(messages) > 0:
-            print(f"  - first message type: {type(messages[0])}")
-            print(f"  - first message keys: {messages[0].keys() if isinstance(messages[0], dict) else 'N/A'}")  # noqa: E501
-        print(f"  - session_id: {session_id}")
-        print(f"  - model_name: {model_name}")
-
-        # Initialize api_debug_logs if it doesn't exist
-        if not hasattr(self, 'api_debug_logs'):
-            self.api_debug_logs = []
         """Get a response from the AI model with contextual memory.
+
+        Delegates to AIService for handling the AI interaction.
 
         Args:
             messages: List of conversation messages
             session_id: Current game session ID for memory retrieval
             recent_history_turns: Number of recent conversation turns to include (default: 5)
+            model_name: The OpenAI model to use
+            max_tokens: Maximum tokens for the response
 
         Returns:
             AI model's response text
-        """  # noqa: E501
-        # Only check app config if debug_enabled hasn't been set yet
-        # This prevents overriding debug_enabled when it's set in tests
-        if not hasattr(self, 'debug_enabled'):
-            try:
-                self.debug_enabled = current_app.config.get("API_DEBUG", False)
-            except RuntimeError:
-                # Not in an application context
-                self.debug_enabled = False
-
-        # Handle string message (convert to proper message format)
-        if isinstance(messages, str):
-            messages = [{"role": "user", "content": messages}]
-
-        # Extract the current situation from the latest user message
-        current_situation = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                current_situation = msg.get("content", "")
-                break
-
-        # Retrieve relevant memories if we have a session ID
-        memory_context = ""
-        if session_id and current_situation:
-            # Get the session-specific memory graph
+        """
+        # Get the memory graph if we have a session ID
+        memory_graph = None
+        if session_id:
             memory_graph = self.get_session_memory_graph(session_id)
-            memory_context = memory_graph.get_relevant_context(
-                current_situation, node_limit=10, max_tokens=10000
-            )
 
-        # Start with the system message (including memory context)
-        final_messages = [
-            {
-                "role": "system",
-                "content": self.system_prompt
-                + (
-                    f"\n\nRelevant game history:\n{memory_context}"
-                    if memory_context
-                    else ""
-                ),
-            }
-        ]
+        # Create game state service instance
+        game_state_service = GameStateService()
 
-        # Get the user's current query as the last message
-        current_user_query = None
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                current_user_query = msg
-                break
-
-        # If we have a session ID, we can add the most recent relevant conversation
-        if session_id and recent_history_turns > 0 and current_user_query:
-            game_state_service = GameStateService()
-            history = game_state_service.get_session_history(session_id)
-
-            if history and len(history) > 0:
-                # Get recent conversation turns, but filter to just player/GM exchanges
-                filtered_history = []
-                for msg in history:
-                    role = msg.get("role", "")
-                    content = msg.get("content", "")
-
-                    # Only include player statements and GM responses
-                    # Skip system messages, status updates, etc.
-                    if role in ["player", "gm"] and content:
-                        # Further filter out inventory updates or status messages
-                        # This is a simple heuristic - you may want to improve it
-                        if not (
-                            "inventory" in content.lower()
-                            or "stats:" in content.lower()
-                            or "health:" in content.lower()
-                            or "updated" in content.lower()
-                        ):
-                            filtered_history.append(msg)
-
-                # Take only recent turns based on parameter
-                recent_turns = filtered_history[
-                    -min(recent_history_turns * 2, len(filtered_history)) :
-                ]
-
-                # Add filtered conversation history to messages
-                for msg in recent_turns:
-                    role = msg.get("role", "")
-                    # Convert internal roles to OpenAI format
-                    openai_role = (
-                        "user"
-                        if role == "player"
-                        else "assistant"
-                        if role == "gm"
-                        else "system"
-                    )
-                    final_messages.append(
-                        {"role": openai_role, "content": msg.get("content", "")}
-                    )
-
-        # Add the current query as the final user message
-        if current_user_query and (
-            not final_messages or final_messages[-1]["role"] != "user"
-        ):
-            final_messages.append(current_user_query)
-
-        # Initialize debug entry outside the try block if debug is enabled
-        debug_entry = None
-        if self.debug_enabled:
-            # Extract prompt based on message format
-            prompt_content = messages
-            if not isinstance(messages, str):
-                if isinstance(messages, list) and len(messages) > 0 and "content" in messages[0]:
-                    prompt_content = messages[0]["content"]
-                else:
-                    prompt_content = str(messages)
-
-            debug_entry = {
-                "timestamp": datetime.now().isoformat(),
-                "model": model_name,
-                "prompt": prompt_content,
-                "max_tokens": max_tokens,
-                "temperature": 0.7,
-                "response": None,
-                "error": None,
-            }
-
-        try:
-            # Print before API call
-            print(f"About to call OpenAI API, debug_enabled={self.debug_enabled}")
-            # Use OpenAI 1.0+ API format
-
-            # Make the actual API call with the new client-based API
-            print(f"Client object: {self.openai_client}")
-            response = self.openai_client.chat.completions.create(
-                model=model_name,
-                messages=final_messages,
-                temperature=0.7,
-                max_tokens=max_tokens,
-            )
-            
-            # Handle the response safely in case it's not the expected object type
-            if hasattr(response, 'choices') and len(response.choices) > 0:
-                choice = response.choices[0]
-                if hasattr(choice, 'message') and hasattr(choice.message, 'content'):
-                    response_content = choice.message.content
-                else:
-                    # Handle the case where message structure is unexpected
-                    response_content = str(choice)
-            else:
-                # If response doesn't have expected structure, convert to string
-                response_content = str(response)
-
-            # Store response data if debug is enabled
-            if self.debug_enabled and debug_entry is not None:
-                debug_entry["response"] = response
-                self.api_debug_logs.append(debug_entry)
-
-            return response_content
-
-        except Exception as e:
-            error_msg = f"Error getting AI response: {str(e)}"
-
-            # Store error data if debug is enabled
-            if self.debug_enabled:
-                # Print for debugging
-                print(f"Debug enabled: {self.debug_enabled}, Debug entry: {debug_entry}")
-
-                # If debug_entry wasn't initialized, create it now
-                if debug_entry is None:
-                    # Extract prompt based on message format
-                    prompt_content = messages
-                    if not isinstance(messages, str):
-                        if isinstance(messages, list) and len(messages) > 0 and "content" in messages[0]:
-                            prompt_content = messages[0]["content"]
-                        else:
-                            prompt_content = str(messages)
-
-                    debug_entry = {
-                        "timestamp": datetime.now().isoformat(),
-                        "model": model_name,
-                        "prompt": prompt_content,
-                        "max_tokens": max_tokens,
-                        "temperature": 0.7,
-                        "response": None,
-                        "error": error_msg,
-                    }
-                else:
-                    debug_entry["error"] = error_msg
-
-                # Print debug log before appending
-                print(f"Debug entry to append: {debug_entry}")
-                print(f"Debug logs before append: {self.api_debug_logs}")
-
-                # Ensure debug log is appended before raising
-                self.api_debug_logs.append(debug_entry)
-
-                # Print debug logs after append
-                print(f"Debug logs after append: {self.api_debug_logs}")
-
-            # Re-raise the exception to allow tests to catch it
-            raise
-
+        # Delegate to the AI service
+        return self.ai_service.get_ai_response(
+            messages,
+            session_id,
+            recent_history_turns,
+            model_name,
+            max_tokens,
+            memory_graph,
+            game_state_service
+        )
+        
     def start_game(
         self, character: Character, game_world: str, session_id: str = None
     ) -> str:
@@ -761,93 +590,39 @@ class GameMaster:
         schema: Dict[str, Any],
         debug_entry: Optional[Dict] = None
     ) -> Tuple[Dict, str]:
-        """Get structured AI response using OpenAI function calling."""
+        """Get structured AI response using OpenAI function calling.
+
+        Delegates to AIService to handle the AI interaction.
+
+        Args:
+            messages: The messages to send to the API
+            schema: The JSON schema for the function call
+            debug_entry: Optional debug entry for logging
+
+        Returns:
+            Tuple of (function_args, text_response)
+        """
         try:
+            # Default parameters for the API call
             model_name = "gpt-4o-mini"
             max_tokens = 1000
             temperature = 0.7
-
-            response = self.openai_client.chat.completions.create(
-                model=model_name,
+            
+            # Delegate to AIService
+            return self.ai_service.get_structured_ai_response(
                 messages=messages,
-                functions=[{"name": "output_result", "parameters": schema}],
-                function_call={"name": "output_result"},
+                schema=schema,
+                debug_entry=debug_entry,
+                model_name=model_name,
                 max_tokens=max_tokens,
-                temperature=temperature,
+                temperature=temperature
             )
-
-            # Extract the function call from the response
-            response_message = response.choices[0].message
-            function_call = response_message.function_call
-            function_args = json.loads(function_call.arguments)
-            text_response = function_args.get("message", "")
-
-            # If debugging, store the response
-            if debug_entry is not None:
-                debug_entry["response"] = response
-                self.api_debug_logs.append(debug_entry)
-
-            return function_args, text_response
         except Exception as e:
-            logging.error(f"Error calling OpenAI API: {str(e)}")
-
+            logging.error(f"Error getting structured AI response: {str(e)}")
             if debug_entry is not None:
                 debug_entry["error"] = str(e)
                 self.api_debug_logs.append(debug_entry)
-
-            raise e
-
-    def _handle_ai_response_error(
-        self,
-        e: Exception,
-        debug_entry: Optional[Dict] = None
-    ) -> str:
-        """Handle errors from AI responses."""
-        import traceback
-        import inspect
-        
-        # Get detailed error information
-        error_type = type(e).__name__
-        error_message = str(e)
-        error_traceback = traceback.format_exc()
-        
-        # Get the frame where the error occurred
-        frames = inspect.trace()
-        caller_frame = frames[0] if frames else None
-        caller_info = ""
-        if caller_frame:
-            frame_info = caller_frame[0]
-            caller_file = frame_info.f_code.co_filename
-            caller_line = frame_info.f_lineno
-            caller_function = frame_info.f_code.co_name
-            caller_locals = {k: repr(v) for k, v in frame_info.f_locals.items() 
-                             if k not in ['self', 'e'] and not k.startswith('__')}
-            caller_info = f"Error occurred in {caller_file}:{caller_line}, function {caller_function}\n"
-            caller_info += f"Local variables: {json.dumps(caller_locals, indent=2)}"
-        
-        # Log detailed error information
-        print(f"ERROR DETAILS\nType: {error_type}\nMessage: {error_message}")
-        print(f"Traceback:\n{error_traceback}")
-        print(f"Caller Info:\n{caller_info}")
-        
-        # Store error info in debug entry if provided
-        if debug_entry is not None:
-            debug_entry["error"] = {
-                "type": error_type,
-                "message": error_message,
-                "traceback": error_traceback,
-                "caller_info": caller_info
-            }
-            self.api_debug_logs.append(debug_entry)
-            
-        # Return a user-friendly error message
-        error_message = f"I apologize, but I encountered an error: {str(e)}"
-
-        if debug_entry is not None:
-            debug_entry["error"] = str(e)
-            self.api_debug_logs.append(debug_entry)
-
-        return error_message
+            return {}, f"Error: {str(e)}"
 
     def _process_structured_ai_response(
         self,

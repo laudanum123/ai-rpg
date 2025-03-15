@@ -178,25 +178,23 @@ def test_get_ai_response(mock_game_master, mock_memory_graph):
         mock_service_cls.return_value = mock_game_state_service
         mock_game_state_service.get_session_history.return_value = []
         
-        # Create a proper mock response object structure
-        mock_response = MagicMock()
-        mock_choice = MagicMock()
-        mock_message = MagicMock()
-        
         # Set up the expected content
         expected_content = "You see a crowded tavern with patrons drinking and a bard playing music."
-        mock_message.content = expected_content
-        mock_choice.message = mock_message
-        mock_response.choices = [mock_choice]
         
-        # Assign our mock to the API call
-        mock_game_master.openai_client.chat.completions.create.return_value = mock_response
-
-        response = mock_game_master.get_ai_response(messages, session_id)
-
-        assert isinstance(response, str)
-        assert "tavern" in response.lower()
-        assert mock_game_master.openai_client.chat.completions.create.called
+        # Mock the AIService.get_ai_response method
+        with patch.object(mock_game_master.ai_service, 'get_ai_response') as mock_ai_response:
+            mock_ai_response.return_value = expected_content
+            
+            # Call get_ai_response in GameMaster
+            response = mock_game_master.get_ai_response(messages, session_id)
+            
+            # Verify the response and method call
+            assert isinstance(response, str)
+            assert "tavern" in response.lower()
+            assert mock_ai_response.called
+            
+            # Verify that AIService.get_ai_response was called with the right parameters
+            mock_ai_response.assert_called_once()
 
 
 def test_parse_combat_result():
@@ -492,29 +490,34 @@ def test_get_ai_response_with_session_memory(mock_game_master, mock_memory_graph
         ]
         mock_game_state_service.get_session_history.return_value = mock_history
         
-        # Create a proper mock response structure
+        # Create the expected response
         expected_response = "Based on your previous session, you defeated a dragon and found treasure."
         
-        # Create a mock response object that matches what OpenAI returns
-        mock_response = MagicMock()
-        mock_choice = MagicMock()
-        mock_message = MagicMock()
-        mock_message.content = expected_response
-        mock_choice.message = mock_message
-        mock_response.choices = [mock_choice]
-        
-        # Assign our mock to the API call
-        mock_game_master.openai_client.chat.completions.create.return_value = mock_response
-        
-        # Call the method with session_id and recent_history_turns
-        response = mock_game_master.get_ai_response(
-            messages, session_id=session_id, recent_history_turns=2
-        )
-        
-        # Assertions
-        assert response == expected_response
-        mock_memory_graph.get_relevant_context.assert_called_once()
-        mock_game_state_service.get_session_history.assert_called_once_with(session_id)
+        # Mock the AIService.get_ai_response method
+        with patch.object(mock_game_master.ai_service, 'get_ai_response') as mock_ai_response:
+            mock_ai_response.return_value = expected_response
+            
+            # Call the method with session_id and recent_history_turns
+            response = mock_game_master.get_ai_response(
+                messages, session_id=session_id, recent_history_turns=2
+            )
+            
+            # Assertions
+            assert response == expected_response
+            
+            # Verify that AIService.get_ai_response was called with the correct parameters
+            mock_ai_response.assert_called_once()
+            args, kwargs = mock_ai_response.call_args
+            
+            # Check positional arguments
+            assert len(args) >= 7  # Ensure there are at least 7 positional args
+            assert args[0] == messages  # 1st arg should be messages
+            assert args[1] == session_id  # 2nd arg should be session_id
+            assert args[2] == 2  # 3rd arg should be recent_history_turns
+            # args[3] is model_name
+            # args[4] is max_tokens
+            assert args[5] == mock_memory_graph  # 6th arg should be memory_graph
+            assert args[6] is not None  # 7th arg should be game_state_service
 
 
 def test_get_ai_response_exception_handling(mock_game_master):
@@ -668,7 +671,7 @@ def test_process_action_with_invalid_response(mock_game_master, mock_game_sessio
                 result = mock_game_master.process_action(mock_game_session, mock_character, action)
                 
                 # Should return an error message with the exception details
-                assert "I apologize, but I encountered an error: Invalid JSON" in result
+                assert "Error: Invalid JSON: line 1 column 1 (char 0)" in result
 
 
 def test_generate_npc_with_invalid_json(mock_game_master):
@@ -822,7 +825,7 @@ def test_process_function_call_response(mock_game_master, mock_game_session, moc
         mock_get_graph.return_value = mock_memory_graph
         
         # Mock the AI client call to return our prepared response
-        with patch.object(mock_game_master, 'openai_client') as mock_client:
+        with patch.object(mock_game_master.ai_service, 'openai_client') as mock_client:
             mock_client.chat.completions.create.return_value = mock_response
             
             # Mock game state service - patch the module where it's imported
@@ -894,7 +897,7 @@ def test_process_inventory_changes(mock_game_master, mock_game_session, mock_cha
         mock_get_graph.return_value = mock_memory_graph
         
         # Mock the AI client call to return our prepared response
-        with patch.object(mock_game_master, 'openai_client') as mock_client:
+        with patch.object(mock_game_master.ai_service, 'openai_client') as mock_client:
             mock_client.chat.completions.create.return_value = mock_response
             
             # Test using the process_action method
@@ -960,7 +963,7 @@ def test_process_character_updates(mock_game_master, mock_game_session, mock_cha
         mock_get_graph.return_value = mock_memory_graph
         
         # Mock the AI client call to return our prepared response
-        with patch.object(mock_game_master, 'openai_client') as mock_client:
+        with patch.object(mock_game_master.ai_service, 'openai_client') as mock_client:
             mock_client.chat.completions.create.return_value = mock_response
             
             # Test using the process_action method
@@ -1020,7 +1023,7 @@ def test_character_updates_level_up(mock_game_master, mock_game_session, mock_ch
         mock_get_graph.return_value = mock_memory_graph
         
         # Mock the AI client call to return our prepared response
-        with patch.object(mock_game_master, 'openai_client') as mock_client:
+        with patch.object(mock_game_master.ai_service, 'openai_client') as mock_client:
             mock_client.chat.completions.create.return_value = mock_response
             
             # Test using the process_action method
@@ -1202,7 +1205,7 @@ def test_process_quest_updates(mock_game_master, mock_game_session, mock_charact
             MockGSS.return_value = mock_gss_instance
             
             # Mock the AI client call to return our prepared response
-            with patch.object(mock_game_master, 'openai_client') as mock_client:
+            with patch.object(mock_game_master.ai_service, 'openai_client') as mock_client:
                 mock_client.chat.completions.create.return_value = mock_response
                 
                 # Test using the process_action method
@@ -1237,22 +1240,25 @@ def test_debug_mode_with_error(mock_game_master, mock_game_session, mock_charact
     # Create an OpenAI error
     openai_error = Exception("API rate limit exceeded")
     
-    # Mock the openai_client's chat.completions.create method to raise the error
-    mock_client = MagicMock()
-    mock_client.chat.completions.create.side_effect = openai_error
-    mock_game_master.openai_client = mock_client
-    
-    # Should raise the exception
-    with pytest.raises(Exception) as excinfo:
-        mock_game_master.get_ai_response(
-            "prompt", model_name="gpt-4", max_tokens=100, session_id="test-debug"
+    # In the refactored architecture, we should mock AIService instead
+    with patch.object(mock_game_master.ai_service, 'get_ai_response') as mock_ai_service_response:
+        # Set up the mock to raise an exception
+        mock_ai_service_response.side_effect = openai_error
+        
+        # Call the method - in the refactored code it now returns an error message instead of raising
+        response = mock_game_master.get_ai_response(
+            "prompt", model_name="gpt-4o-mini", max_tokens=100, session_id="test-debug"
         )
         
-    # Check the error was stored in debug logs
-    assert len(mock_game_master.api_debug_logs) == 1
-    assert "API rate limit exceeded" in mock_game_master.api_debug_logs[0]["error"]
-    assert mock_game_master.api_debug_logs[0]["prompt"] == "prompt"
-    assert mock_game_master.api_debug_logs[0]["model"] == "gpt-4"
+        # Verify the error response
+        assert "error" in response.lower()
+        
+        # Verify the AIService was called with correct parameters
+        mock_ai_service_response.assert_called_once()
+        args, kwargs = mock_ai_service_response.call_args
+        assert args[0] == "prompt"
+        assert kwargs.get('model_name', args[3] if len(args) > 3 else None) == "gpt-4o-mini"
+        assert kwargs.get('max_tokens', args[4] if len(args) > 4 else None) == 100
 
 
 def test_update_relationships(mock_game_master, mock_game_session, mock_character):
@@ -1300,7 +1306,7 @@ def test_update_relationships(mock_game_master, mock_game_session, mock_characte
             MockGSS.return_value = mock_gss_instance
             
             # Mock the AI client call to return our prepared response
-            with patch.object(mock_game_master, 'openai_client') as mock_client:
+            with patch.object(mock_game_master.ai_service, 'openai_client') as mock_client:
                 mock_client.chat.completions.create.return_value = mock_response
                 
                 # Test using the process_action method
