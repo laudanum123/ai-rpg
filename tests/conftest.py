@@ -42,7 +42,7 @@ def mock_openai():
         mock_completion.choices[0].message.content = "This is a mock AI response."
         mock_instance = mock.return_value
         mock_instance.chat.completions.create.return_value = mock_completion
-        yield mock
+        yield mock_instance
 
 
 @pytest.fixture
@@ -164,7 +164,8 @@ def mock_combat_encounter(mock_enemy):
 def mock_game_master(mock_openai):
     """Create a GameMaster instance with mocked OpenAI."""
     game_master = GameMaster()
-    game_master.client = mock_openai
+    # Use openai_client instead of client to match refactored implementation
+    game_master.openai_client = mock_openai
     return game_master
 
 

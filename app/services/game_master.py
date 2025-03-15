@@ -1,36 +1,38 @@
-import os
 import json
-from typing import Dict, List, Any
+import logging
 import random
-from datetime import datetime
-from openai import OpenAI
 from collections import deque
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
+
 from flask import current_app
+from openai import OpenAI
+
 from app.models.character import Character
-from app.models.npc import NPC
-from app.models.combat import Enemy, CombatEncounter, roll_dice
+from app.models.combat import CombatEncounter, Enemy, roll_dice
 from app.models.game_session import GameSession
+from app.models.npc import NPC
+from app.services.character_service import CharacterService
+from app.services.game_state_service import GameStateService
 from app.services.memory_graph import MemoryGraph
 
 
 class GameMaster:
     """Service for AI-powered game mastering using GPT-4o-mini."""
 
-    def __init__(self):
+    def __init__(self, debug_enabled=False):
         """Initialize the game master service."""
         # Initialize OpenAI client
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.openai_client = OpenAI()
 
         # Store for API debug messages (max 50 entries)
         self.api_debug_logs = deque(maxlen=50)
-        self.debug_enabled = False
-
-        # Dictionary to store session-specific memory graphs
+        self.debug_enabled = debug_enabled
         self.memory_graphs = {}
 
         # Base configuration for memory graphs
         self.memory_graph_config = {
-            "openai_client": self.client,
+            "openai_client": self.openai_client,
             "embedding_model": "text-embedding-3-large",
             "llm_model": "gpt-4o-mini",
         }
@@ -40,7 +42,7 @@ class GameMaster:
         Your role is to create an engaging and dynamic adventure, manage NPCs, describe
         locations vividly, create interesting plot hooks, and run combat encounters.
         Always stay in character as a GM and maintain consistency in the game world.
-        Focus on creating an immersive experience while following the game's rules."""
+        Focus on creating an immersive experience while following the game's rules."""  # noqa: E501
 
     def get_session_memory_graph(self, session_id: str) -> MemoryGraph:
         """Get or create a memory graph for the specified session.
@@ -52,7 +54,8 @@ class GameMaster:
             The memory graph for this session
         """
         if session_id not in self.memory_graphs:
-            # Create a new memory graph for this session with a session-specific storage directory
+            # Create a new memory graph for this session with
+            # a session-specific storage directory
             storage_dir = f"data/memory_graph/{session_id}"
             memory_graph = MemoryGraph(
                 openai_client=self.memory_graph_config["openai_client"],
@@ -65,11 +68,11 @@ class GameMaster:
             try:
                 memory_graph.load()
                 print(
-                    f"Loaded memory graph for session {session_id} with {len(memory_graph.nodes)} nodes"
+                    f"Loaded memory graph for session {session_id} with {len(memory_graph.nodes)} nodes"  # noqa: E501
                 )
             except Exception as e:
                 print(
-                    f"No existing memory graph found for session {session_id} or error loading: {e}"
+                    f"No existing memory graph found for session {session_id} or error loading: {e}"  # noqa: E501
                 )
 
             self.memory_graphs[session_id] = memory_graph
@@ -152,8 +155,8 @@ class GameMaster:
 
         # Check if enemy was defeated
         if any(phrase in ai_response.lower() for phrase in [
-            "enemy defeated", 
-            "enemy is defeated", 
+            "enemy defeated",
+            "enemy is defeated",
             "enemy has been defeated",
             "enemy is killed",
             "enemy has been killed",
@@ -174,9 +177,15 @@ class GameMaster:
         model_name: str = "gpt-4o-mini",
         max_tokens: int = 2000,
     ) -> str:
-        # Debug print at entry
-        print(f"Entering get_ai_response with debug_enabled={getattr(self, 'debug_enabled', None)}")
-        
+        # Debug logging to trace the error
+        print("DEBUG - get_ai_response called with:")
+        print(f"  - messages type: {type(messages)}")
+        if isinstance(messages, list) and len(messages) > 0:
+            print(f"  - first message type: {type(messages[0])}")
+            print(f"  - first message keys: {messages[0].keys() if isinstance(messages[0], dict) else 'N/A'}")  # noqa: E501
+        print(f"  - session_id: {session_id}")
+        print(f"  - model_name: {model_name}")
+
         # Initialize api_debug_logs if it doesn't exist
         if not hasattr(self, 'api_debug_logs'):
             self.api_debug_logs = []
@@ -189,7 +198,7 @@ class GameMaster:
 
         Returns:
             AI model's response text
-        """
+        """  # noqa: E501
         # Only check app config if debug_enabled hasn't been set yet
         # This prevents overriding debug_enabled when it's set in tests
         if not hasattr(self, 'debug_enabled'):
@@ -202,7 +211,7 @@ class GameMaster:
         # Handle string message (convert to proper message format)
         if isinstance(messages, str):
             messages = [{"role": "user", "content": messages}]
-        
+
         # Extract the current situation from the latest user message
         current_situation = ""
         for msg in reversed(messages):
@@ -241,8 +250,6 @@ class GameMaster:
 
         # If we have a session ID, we can add the most recent relevant conversation
         if session_id and recent_history_turns > 0 and current_user_query:
-            from app.services.game_state_service import GameStateService
-
             game_state_service = GameStateService()
             history = game_state_service.get_session_history(session_id)
 
@@ -302,7 +309,7 @@ class GameMaster:
                     prompt_content = messages[0]["content"]
                 else:
                     prompt_content = str(messages)
-                    
+
             debug_entry = {
                 "timestamp": datetime.now().isoformat(),
                 "model": model_name,
@@ -312,21 +319,32 @@ class GameMaster:
                 "response": None,
                 "error": None,
             }
-            
+
         try:
             # Print before API call
             print(f"About to call OpenAI API, debug_enabled={self.debug_enabled}")
             # Use OpenAI 1.0+ API format
 
             # Make the actual API call with the new client-based API
-            print(f"Client object: {self.client}")
-            response = self.client.chat.completions.create(
+            print(f"Client object: {self.openai_client}")
+            response = self.openai_client.chat.completions.create(
                 model=model_name,
                 messages=final_messages,
                 temperature=0.7,
                 max_tokens=max_tokens,
             )
-            response_content = response.choices[0].message.content
+            
+            # Handle the response safely in case it's not the expected object type
+            if hasattr(response, 'choices') and len(response.choices) > 0:
+                choice = response.choices[0]
+                if hasattr(choice, 'message') and hasattr(choice.message, 'content'):
+                    response_content = choice.message.content
+                else:
+                    # Handle the case where message structure is unexpected
+                    response_content = str(choice)
+            else:
+                # If response doesn't have expected structure, convert to string
+                response_content = str(response)
 
             # Store response data if debug is enabled
             if self.debug_enabled and debug_entry is not None:
@@ -342,7 +360,7 @@ class GameMaster:
             if self.debug_enabled:
                 # Print for debugging
                 print(f"Debug enabled: {self.debug_enabled}, Debug entry: {debug_entry}")
-                
+
                 # If debug_entry wasn't initialized, create it now
                 if debug_entry is None:
                     # Extract prompt based on message format
@@ -352,7 +370,7 @@ class GameMaster:
                             prompt_content = messages[0]["content"]
                         else:
                             prompt_content = str(messages)
-                            
+
                     debug_entry = {
                         "timestamp": datetime.now().isoformat(),
                         "model": model_name,
@@ -364,14 +382,14 @@ class GameMaster:
                     }
                 else:
                     debug_entry["error"] = error_msg
-                
+
                 # Print debug log before appending
                 print(f"Debug entry to append: {debug_entry}")
                 print(f"Debug logs before append: {self.api_debug_logs}")
-                
+
                 # Ensure debug log is appended before raising
                 self.api_debug_logs.append(debug_entry)
-                
+
                 # Print debug logs after append
                 print(f"Debug logs after append: {self.api_debug_logs}")
 
@@ -427,967 +445,888 @@ class GameMaster:
         return response
 
     def process_action(
-        self,
-        session: "GameSession",
-        character: Character,
-        action: str,
-        npcs_present: List[Dict] = None,
+        self, session: "GameSession", character: Character, action: str, npcs_present: List[Dict] = None
     ) -> str:
-        """Process a player's action.
-
+        """
+        Process a player action within the game session.
+        
         Args:
             session: Current game session
             character: Player character
-            action: Player's action description
-            npcs_present: List of NPCs present in the current location
-
+            action: Action text
+            npcs_present: List of NPCs present in the scene
+        
         Returns:
-            GM's response to the action
+            Response text
         """
-        if npcs_present is None:
-            npcs_present = []
+        try:
+            # Step 1: Prepare messages for AI request
+            messages = self._prepare_action_messages(session, character, action, npcs_present)
 
-        # Importance factor for the memory graph (1.0 is highest)
-        importance = 0.5
+            # Step 2: Add memory context
+            memory_graph = self.get_session_memory_graph(session.id)
+            messages = self._add_memory_context(messages, memory_graph, character, session)
 
-        # Get recent game history
-        messages = []
-        for history_item in session.history[-10:]:  # Get last 10 items max
-            messages.append(
-                {
-                    "role": "user" if history_item["role"] == "player" else "assistant",
-                    "content": history_item["content"],
-                }
+            # Step 3: Create response schema for structured output
+            schema = self._create_location_response_schema()
+
+            # Step 4: Initialize debug entry if debugging is enabled
+            model_name = "gpt-4o-mini"
+            debug_entry = self._initialize_debug_for_action(model_name, messages)
+
+            # Step 5: Get structured AI response
+            function_args, text_response = self._get_structured_ai_response(
+                messages, schema, debug_entry
             )
+
+            # Step 6: Process the structured response
+            self._process_structured_ai_response(function_args, session, character)
+
+            return text_response
+
+        except Exception as e:
+            # Handle errors
+            return self._handle_ai_response_error(e, debug_entry if 'debug_entry' in locals() else None)
+
+    def _prepare_action_messages(self, session: "GameSession", character: Character,
+                               action: str, npcs_present: List[Dict] = None) -> List[Dict[str, Any]]:
+        """Prepare messages for the AI request based on session history and current action."""
+        # Construct the system message and base messages
+        messages = self._create_base_system_messages(character)
+
+        # Add location and NPC context
+        messages = self._add_environment_context(messages, session, npcs_present)
+
+        # Add history context
+        messages = self._add_history_context(messages, session, action)
 
         # Add the current action
         messages.append({"role": "user", "content": action})
 
-        # Load recent memories to provide context
-        game_context = ""
-        if hasattr(session, "id"):
-            memory_graph = self.get_session_memory_graph(session.id)
-            relevant_context = memory_graph.get_relevant_context(action, node_limit=5)
-            if relevant_context and relevant_context != "No relevant memories found.":
-                game_context = f"""Important context from previous interactions:
-                
-                {relevant_context}
-                
-                Current location: {session.current_location.get("name", "Unknown")}
-                Description: {session.current_location.get("description", "")}
-                """
+        return messages
 
-                # Add game context as a system message
-                messages.insert(
-                    0,
-                    {
-                        "role": "system",
-                        "content": self.system_prompt + "\n\n" + game_context,
-                    },
-                )
-            else:
-                messages.insert(0, {"role": "system", "content": self.system_prompt})
+    def _create_base_system_messages(self, character: Character) -> List[Dict[str, Any]]:
+        """Create the base system messages including character information."""
+        system_message = {
+            "role": "system",
+            "content": (
+                "You are a fantasy RPG game master. Respond in character as a narrator to user's "
+                "actions. Keep responses lively, engaging and between 100-200 words unless more "
+                "description is needed. Include environmental details and character reactions. "
+                "If player attempts a questionable action, show reasonable consequences rather "
+                "than refusing outright. Allow creative problem-solving."
+            ),
+        }
+
+        messages = [system_message]
+
+        # Add character context
+        char_desc = (
+            f"Your character is {character.name}, a level {character.level} "
+            f"{character.character_class}."
+        )
+        messages.append({"role": "system", "content": char_desc})
+
+        # Add character stats context
+        stats_desc = (
+            f"Stats - Health: {character.health}/{character.max_health}, "
+            f"Gold: {character.gold}, Experience: {character.experience}, "
+            f"Level: {character.level}"
+        )
+        messages.append({"role": "system", "content": stats_desc})
+
+        # Add inventory context
+        if character.inventory:
+            inv_items = ", ".join(
+                item.get("name", "Unknown Item") for item in character.inventory
+            )
+            inv_desc = f"Inventory: {inv_items}"
+            messages.append({"role": "system", "content": inv_desc})
+
+        return messages
+
+    def _add_environment_context(self, messages: List[Dict[str, Any]],
+                               session: "GameSession",
+                               npcs_present: List[Dict] = None) -> List[Dict[str, Any]]:
+        """Add location and NPC context to messages."""
+        # Add location context if available
+        if hasattr(session, "current_location") and session.current_location:
+            location = session.current_location
+            location_desc = (
+                f"You are currently in {location.get('name', 'Unknown')}. "
+                f"{location.get('description', '')}"
+            )
+            messages.append({"role": "system", "content": location_desc})
+
+        # Add NPC context if present
+        if npcs_present:
+            npc_names = ", ".join(npc.get("name", "Unknown NPC") for npc in npcs_present)
+            npc_desc = f"NPCs present: {npc_names}"
+            messages.append({"role": "system", "content": npc_desc})
+
+            # Add detailed NPC information
+            for npc in npcs_present:
+                if "description" in npc:
+                    npc_info = f"{npc['name']}: {npc['description']}"
+                    messages.append({"role": "system", "content": npc_info})
+
+        return messages
+
+    def _add_history_context(self, messages: List[Dict[str, Any]],
+                           session: "GameSession",
+                           action: str) -> List[Dict[str, Any]]:
+        """Add conversation history context to messages."""
+        # Add session history context
+        if hasattr(session, "history") and len(session.history) > 0:
+            history = session.history[-10:]  # Get last 10 items for context
         else:
-            messages.insert(0, {"role": "system", "content": self.system_prompt})
+            history = []
 
-        # Check if this might be a movement action
-        movement_words = [
-            "go",
-            "walk",
-            "move",
-            "travel",
-            "head",
-            "enter",
-            "exit",
-            "leave",
-            "north",
-            "south",
-            "east",
-            "west",
-            "up",
-            "down",
-        ]
-        potential_movement = any(
-            word in action.lower().split() for word in movement_words
+        # Calculate context tokens
+        context_tokens = (
+            len(action.split()) +
+            sum(len(entry.get("action", "").split()) + len(entry.get("response", "").split())
+                for entry in history)
         )
 
-        # Response variable
-        response = ""
+        # Add history context if token count allows
+        if context_tokens < 2000 and history:
+            for entry in history:
+                if "action" in entry and entry["action"]:
+                    messages.append({"role": "user", "content": entry["action"]})
+                if "response" in entry and entry["response"]:
+                    messages.append({"role": "assistant", "content": entry["response"]})
 
-        # Define the output schema for OpenAI's structured output
-        location_response_schema = {
+        return messages
+
+    def _add_memory_context(self, messages: List[Dict[str, Any]], memory_graph,
+                          character: Character, session: "GameSession") -> List[Dict[str, Any]]:
+        """Add relevant context from the memory graph to the messages."""
+        # Skip if no memory graph
+        if not memory_graph:
+            return messages
+
+        # Query relevant memories
+        action_text = messages[-1]["content"]
+        relevant_nodes = memory_graph.get_relevant_context(action_text)
+
+        if relevant_nodes:
+            memory_context = "Relevant memories:\n"
+            for node in relevant_nodes:
+                # Handle both MemoryNode objects and strings
+                if hasattr(node, 'content'):
+                    # It's a MemoryNode object
+                    memory_context += f"- {node.content}\n"
+                else:
+                    # It's already a string
+                    memory_context += f"- {node}\n"
+
+            # Insert memory context after system message
+            messages.insert(1, {"role": "system", "content": memory_context})
+
+        # Add quest information if available
+        if hasattr(session, "active_quests") and session.active_quests:
+            quest_context = "Active quests:\n"
+            for quest in session.active_quests:
+                quest_context += (
+                    f"- {quest['title']}: {quest['description']} "
+                    f"(Status: {quest['status']})\n"
+                )
+            messages.insert(1, {"role": "system", "content": quest_context})
+
+        return messages
+
+    def _create_location_response_schema(self) -> Dict:
+        """Create the response schema for structured output from OpenAI."""
+        return {
             "type": "object",
             "properties": {
                 "message": {
                     "type": "string",
-                    "description": "The game master's narrative response to the player's action",
+                    "description": "The narrative response to the player's action"
                 },
                 "location": {
                     "type": "object",
-                    "description": "Information about the current location after the action is processed",
                     "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "The name of the current location",
-                        },
-                        "description": {
-                            "type": "string",
-                            "description": "A detailed description of the current location",
-                        },
-                        "location_changed": {
-                            "type": "boolean",
-                            "description": "Whether the player has moved to a new location as a result of this action",
-                        },
-                    },
-                    "required": ["name", "description", "location_changed"],
+                        "name": {"type": "string"},
+                        "description": {"type": "string"},
+                        "location_changed": {"type": "boolean"}
+                    }
                 },
                 "inventory_changes": {
                     "type": "object",
-                    "description": "Changes to the player's inventory as a result of this action",
                     "properties": {
                         "added_items": {
                             "type": "array",
-                            "description": "Items added to the player's inventory",
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "name": {
-                                        "type": "string",
-                                        "description": "The name of the item",
-                                    },
-                                    "type": {
-                                        "type": "string",
-                                        "description": "The type of item (weapon, armor, consumable, quest, etc.)",
-                                    },
-                                    "description": {
-                                        "type": "string",
-                                        "description": "A description of the item",
-                                    },
-                                },
-                                "required": ["name", "type"],
-                            },
+                                    "name": {"type": "string"},
+                                    "type": {"type": "string"},
+                                    "description": {"type": "string"}
+                                }
+                            }
                         },
                         "removed_items": {
                             "type": "array",
-                            "description": "Items removed from the player's inventory",
-                            "items": {
-                                "type": "string",
-                                "description": "The name of the item to remove",
-                            },
+                            "items": {"type": "string"}
                         },
                         "items_used": {
                             "type": "array",
-                            "description": "Items used by the player in this action (but not removed from inventory)",
-                            "items": {
-                                "type": "string",
-                                "description": "The name of the item used",
-                            },
-                        },
-                    },
+                            "items": {"type": "string"}
+                        }
+                    }
                 },
                 "character_updates": {
                     "type": "object",
-                    "description": "Updates to the player character as a result of this action",
                     "properties": {
-                        "experience_gained": {
-                            "type": "integer",
-                            "description": "Amount of experience points gained from this action",
-                        },
-                        "gold_gained": {
-                            "type": "integer",
-                            "description": "Amount of gold gained from this action",
-                        },
-                        "gold_spent": {
-                            "type": "integer",
-                            "description": "Amount of gold spent during this action",
-                        },
-                        "health_change": {
-                            "type": "integer",
-                            "description": "Change in health points (positive for healing, negative for damage)",
-                        },
-                    },
+                        "experience_gained": {"type": "integer"},
+                        "gold_gained": {"type": "integer"},
+                        "gold_spent": {"type": "integer"},
+                        "health_change": {"type": "integer"}
+                    }
                 },
                 "relationship_updates": {
                     "type": "object",
-                    "description": "Updates to NPC relationships as a result of this action",
                     "properties": {
                         "npc_relationships": {
                             "type": "array",
-                            "description": "Changes in relationships with NPCs",
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "name": {
-                                        "type": "string",
-                                        "description": "The name of the NPC",
-                                    },
-                                    "change": {
-                                        "type": "number",
-                                        "description": "The change in relationship value (positive for improved, negative for worsened)",
-                                    },
-                                    "reason": {
-                                        "type": "string",
-                                        "description": "The reason for the relationship change",
-                                    },
-                                },
-                                "required": ["name", "change"],
-                            },
-                        },
-                    },
+                                    "name": {"type": "string"},
+                                    "change": {"type": "integer"},
+                                    "reason": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
                 },
+                "quest_updates": {
+                    "type": "object",
+                    "properties": {
+                        "new_quests": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string"},
+                                    "title": {"type": "string"},
+                                    "description": {"type": "string"},
+                                    "objective": {"type": "string"},
+                                    "reward": {"type": "string"}
+                                },
+                                "required": ["id", "title"]
+                            }
+                        },
+                        "completed_quests": {
+                            "type": "array",
+                            "items": {"type": "string"}
+                        },
+                        "updated_quests": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string"},
+                                    "progress": {"type": "string"}
+                                },
+                                "required": ["id"]
+                            }
+                        }
+                    }
+                }
             },
-            "required": ["message", "location"],
+            "required": ["message"]
         }
 
-        # Only check app config if debug_enabled hasn't been set yet
-        # This prevents overriding debug_enabled when it's set in tests
-        if not hasattr(self, 'debug_enabled'):
-            try:
-                self.debug_enabled = current_app.config.get("API_DEBUG", False)
-            except RuntimeError:
-                # Not in an application context
-                self.debug_enabled = False
+    def _initialize_debug_for_action(self, model_name: str, messages: List[Dict[str, Any]]) -> Optional[Dict]:
+        """Initialize a debug entry if debugging is enabled."""
+        if not self.debug_enabled:
+            return None
 
-        # Create debug entry if debug is enabled
-        if self.debug_enabled:
-            debug_entry = {
-                "timestamp": datetime.now().isoformat(),
-                "session_id": session.id if hasattr(session, "id") else None,
-                "request": {
-                    "model": "gpt-4o-mini",
-                    "messages": messages,
-                    "temperature": 0.7,
-                    "function_call": True,
-                },
-                "response": None,
-                "error": None,
-            }
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "model": model_name,
+            "prompt": messages,
+            "max_tokens": 1000,
+            "temperature": 0.7,
+            "response": None,
+            "error": None,
+        }
 
-        # Use the OpenAI client to get a structured response using function calling
+    def _get_structured_ai_response(
+        self,
+        messages: List[Dict[str, Any]],
+        schema: Dict[str, Any],
+        debug_entry: Optional[Dict] = None
+    ) -> Tuple[Dict, str]:
+        """Get structured AI response using OpenAI function calling."""
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+            model_name = "gpt-4o-mini"
+            max_tokens = 1000
+            temperature = 0.7
+
+            response = self.openai_client.chat.completions.create(
+                model=model_name,
                 messages=messages,
-                temperature=0.7,
-                functions=[
-                    {
-                        "name": "process_response",
-                        "description": "Process the structured response from the AI",
-                        "parameters": location_response_schema,
-                    }
-                ],
-                function_call={"name": "process_response"},
+                functions=[{"name": "output_result", "parameters": schema}],
+                function_call={"name": "output_result"},
+                max_tokens=max_tokens,
+                temperature=temperature,
             )
 
-            # Store response data if debug is enabled
-            if self.debug_enabled:
+            # Extract the function call from the response
+            response_message = response.choices[0].message
+            function_call = response_message.function_call
+            function_args = json.loads(function_call.arguments)
+            text_response = function_args.get("message", "")
+
+            # If debugging, store the response
+            if debug_entry is not None:
                 debug_entry["response"] = response
                 self.api_debug_logs.append(debug_entry)
 
+            return function_args, text_response
         except Exception as e:
-            error_msg = f"Error getting AI response: {str(e)}"
+            logging.error(f"Error calling OpenAI API: {str(e)}")
 
-            # Store error data if debug is enabled
-            if self.debug_enabled:
-                debug_entry["error"] = error_msg
+            if debug_entry is not None:
+                debug_entry["error"] = str(e)
                 self.api_debug_logs.append(debug_entry)
 
             raise e
 
-        # Extract the response json
-        try:
-            # When using function_call, the content will be in the function_call arguments
-            if response.choices[0].message.function_call:
-                function_args = json.loads(
-                    response.choices[0].message.function_call.arguments
+    def _handle_ai_response_error(
+        self,
+        e: Exception,
+        debug_entry: Optional[Dict] = None
+    ) -> str:
+        """Handle errors from AI responses."""
+        import traceback
+        import inspect
+        
+        # Get detailed error information
+        error_type = type(e).__name__
+        error_message = str(e)
+        error_traceback = traceback.format_exc()
+        
+        # Get the frame where the error occurred
+        frames = inspect.trace()
+        caller_frame = frames[0] if frames else None
+        caller_info = ""
+        if caller_frame:
+            frame_info = caller_frame[0]
+            caller_file = frame_info.f_code.co_filename
+            caller_line = frame_info.f_lineno
+            caller_function = frame_info.f_code.co_name
+            caller_locals = {k: repr(v) for k, v in frame_info.f_locals.items() 
+                             if k not in ['self', 'e'] and not k.startswith('__')}
+            caller_info = f"Error occurred in {caller_file}:{caller_line}, function {caller_function}\n"
+            caller_info += f"Local variables: {json.dumps(caller_locals, indent=2)}"
+        
+        # Log detailed error information
+        print(f"ERROR DETAILS\nType: {error_type}\nMessage: {error_message}")
+        print(f"Traceback:\n{error_traceback}")
+        print(f"Caller Info:\n{caller_info}")
+        
+        # Store error info in debug entry if provided
+        if debug_entry is not None:
+            debug_entry["error"] = {
+                "type": error_type,
+                "message": error_message,
+                "traceback": error_traceback,
+                "caller_info": caller_info
+            }
+            self.api_debug_logs.append(debug_entry)
+            
+        # Return a user-friendly error message
+        error_message = f"I apologize, but I encountered an error: {str(e)}"
+
+        if debug_entry is not None:
+            debug_entry["error"] = str(e)
+            self.api_debug_logs.append(debug_entry)
+
+        return error_message
+
+    def _process_structured_ai_response(
+        self,
+        function_args: Dict,
+        session: "GameSession",
+        character: Character
+    ) -> None:
+        """Process the structured response from the AI."""
+        # Process location updates
+        self._process_location_updates(function_args, session)
+
+        # Process inventory changes
+        self._process_inventory_changes(function_args, session, character)
+
+        # Process character updates
+        self._process_character_updates(function_args, session, character)
+
+        # Process relationship updates
+        self._process_relationship_updates(function_args, session)
+
+        # Process combat updates
+        self._process_combat_updates(function_args, session, character)
+
+        # Process quest updates
+        self._process_quest_updates(function_args, session)
+
+        # Add the interaction to memory
+        self._add_interaction_to_memory(session, character, function_args)
+
+    def _process_location_updates(self, function_args: Dict, session: "GameSession"):
+        """Process location updates from the AI response."""
+        # Update location if changed and has correct structure
+        if "location" in function_args and isinstance(
+            function_args["location"], dict
+        ):
+            location_data = function_args["location"]
+            if location_data.get("location_changed", False):
+                session.current_location = {
+                    "name": location_data.get("name", "Unknown"),
+                    "description": location_data.get("description", ""),
+                }
+                # Persist the location change to storage
+                game_state_service = GameStateService()
+                game_state_service.update_session(session)
+
+                # Add location change to memory graph
+                memory_graph = self.get_session_memory_graph(session.id)
+                memory_graph.add_node(
+                    content=f"Character moved to {location_data.get('name', 'Unknown')}",
+                    node_type="location",
+                    importance=0.8,
                 )
 
-                # Update location if changed and has correct structure
-                if "location" in function_args and isinstance(
-                    function_args["location"], dict
-                ):
-                    location_data = function_args["location"]
-                    if location_data.get("location_changed", False):
-                        session.current_location = {
-                            "name": location_data.get("name", "Unknown"),
-                            "description": location_data.get("description", ""),
-                        }
-                        # Persist the location change to storage
-                        from app.services.game_state_service import GameStateService
+    def _process_inventory_changes(self, function_args: Dict, session: "GameSession", character: Character):
+        """Process inventory changes from the AI response."""
+        if "inventory_changes" not in function_args or not isinstance(
+            function_args["inventory_changes"], dict
+        ):
+            return
 
-                        game_state_service = GameStateService()
-                        game_state_service.update_session(session)
+        inventory_changes = function_args["inventory_changes"]
 
-                # Process inventory changes if any
-                if "inventory_changes" in function_args and isinstance(
-                    function_args["inventory_changes"], dict
-                ):
-                    inventory_changes = function_args["inventory_changes"]
+        # Process added items
+        self._process_added_items(inventory_changes, session, character)
 
-                    # Process added items
-                    if "added_items" in inventory_changes and isinstance(
-                        inventory_changes["added_items"], list
-                    ):
-                        for item in inventory_changes["added_items"]:
-                            if (
-                                isinstance(item, dict)
-                                and "name" in item
-                                and "type" in item
-                            ):
-                                # Generate a unique ID for the item
-                                import uuid
+        # Process removed items
+        self._process_removed_items(inventory_changes, session, character)
 
-                                item_id = str(uuid.uuid4())
+        # Process used items
+        self._process_used_items(inventory_changes, session, character)
 
-                                # Create a complete item object
-                                new_item = {
-                                    "id": item_id,
-                                    "name": item["name"],
-                                    "type": item["type"],
-                                    "description": item.get(
-                                        "description", f"A {item['type']}."
-                                    ),
-                                }
+    def _process_added_items(self, inventory_changes: Dict, session: "GameSession", character: Character):
+        """Process items added to the inventory."""
+        if "added_items" not in inventory_changes or not isinstance(
+            inventory_changes["added_items"], list
+        ):
+            return
 
-                                # Add to character inventory
-                                character.add_item(new_item)
+        for item in inventory_changes["added_items"]:
+            if (
+                isinstance(item, dict)
+                and "name" in item
+                and "type" in item
+            ):
+                # Generate a unique ID for the item
+                import uuid
 
-                                # Log item addition to memory graph
+                item_id = str(uuid.uuid4())
+
+                # Create a complete item object
+                new_item = {
+                    "id": item_id,
+                    "name": item["name"],
+                    "type": item["type"],
+                    "description": item.get(
+                        "description", f"A {item['type']}."
+                    ),
+                }
+
+                # Add to character inventory
+                character.add_item(new_item)
+
+                # Log item addition to memory graph
+                memory_graph = self.get_session_memory_graph(session.id)
+                memory_graph.add_node(
+                    content=f"Character acquired item: {item['name']} ({item['type']})",
+                    node_type="inventory",
+                    importance=0.7,
+                )
+
+    def _process_removed_items(self, inventory_changes: Dict, session: "GameSession", character: Character):
+        """Process items removed from the inventory."""
+        if "removed_items" not in inventory_changes or not isinstance(
+            inventory_changes["removed_items"], list
+        ):
+            return
+
+        for item_name in inventory_changes["removed_items"]:
+            # Find the item in inventory
+            item_to_remove = None
+            for inv_item in character.inventory:
+                if inv_item.get("name") == item_name:
+                    item_to_remove = inv_item
+                    break
+
+            # Remove the item if found
+            if item_to_remove:
+                character.remove_item(item_to_remove.get("id"))
+
+                # Log item removal to memory graph
+                memory_graph = self.get_session_memory_graph(session.id)
+                memory_graph.add_node(
+                    content=f"Character lost item: {item_name}",
+                    node_type="inventory",
+                    importance=0.6,
+                )
+
+    def _process_used_items(self, inventory_changes: Dict, session: "GameSession", character: Character):
+        """Process items used by the character."""
+        if "items_used" not in inventory_changes or not isinstance(
+            inventory_changes["items_used"], list
+        ):
+            return
+
+        for item_name in inventory_changes["items_used"]:
+            # Verify item exists in inventory
+            item_exists = any(
+                inv_item.get("name") == item_name
+                for inv_item in character.inventory
+            )
+
+            if item_exists:
+                # Log item usage to memory graph
+                memory_graph = self.get_session_memory_graph(session.id)
+                memory_graph.add_node(
+                    content=f"Character used item: {item_name}",
+                    node_type="inventory",
+                    importance=0.5,
+                )
+
+    def _process_character_updates(self, function_args: Dict, session: "GameSession", character: Character):
+        """Process character updates from the AI response."""
+        if "character_updates" not in function_args or not isinstance(
+            function_args["character_updates"], dict
+        ):
+            return
+
+        char_updates = function_args["character_updates"]
+        updates_made = False
+        update_summary = []
+
+        # Process XP gain
+        if "experience_gained" in char_updates and isinstance(char_updates["experience_gained"], int):
+            xp_gained = char_updates["experience_gained"]
+            if xp_gained > 0:
+                # Add XP and check for level up
+                level_up = character.add_experience(xp_gained)
+                updates_made = True
+                update_summary.append(f"Gained {xp_gained} XP")
+
+                # Log XP gain to memory graph
+                memory_graph = self.get_session_memory_graph(session.id)
+                if level_up:
+                    memory_graph.add_node(
+                        content=f"Character gained {xp_gained} XP and leveled up to level {character.level}",
+                        node_type="progression",
+                        importance=0.9,  # Level ups are important milestones
+                    )
+                else:
+                    memory_graph.add_node(
+                        content=f"Character gained {xp_gained} XP",
+                        node_type="progression",
+                        importance=0.6,
+                    )
+
+        # Process gold changes
+        if "gold_gained" in char_updates and isinstance(char_updates["gold_gained"], int):
+            gold_gained = char_updates["gold_gained"]
+            if gold_gained > 0:
+                character.gold += gold_gained
+                updates_made = True
+                update_summary.append(f"Gained {gold_gained} gold")
+
+                # Log gold gain to memory graph
+                memory_graph = self.get_session_memory_graph(session.id)
+                memory_graph.add_node(
+                    content=f"Character gained {gold_gained} gold",
+                    node_type="transaction",
+                    importance=0.5,
+                )
+
+        if "gold_spent" in char_updates and isinstance(char_updates["gold_spent"], int):
+            gold_spent = char_updates["gold_spent"]
+            if gold_spent > 0 and character.gold >= gold_spent:
+                character.gold -= gold_spent
+                updates_made = True
+                update_summary.append(f"Spent {gold_spent} gold")
+
+                # Log gold spending to memory graph
+                memory_graph = self.get_session_memory_graph(session.id)
+                memory_graph.add_node(
+                    content=f"Character spent {gold_spent} gold",
+                    node_type="transaction",
+                    importance=0.5,
+                )
+
+        # Process health changes
+        if "health_change" in char_updates and isinstance(char_updates["health_change"], int):
+            health_change = char_updates["health_change"]
+            if health_change != 0:
+                if health_change > 0:
+                    # Healing
+                    character.heal(health_change)
+                    update_summary.append(f"Healed {health_change} HP")
+                else:
+                    # Damage
+                    character.take_damage(-health_change)  # Convert to positive for take_damage
+                    update_summary.append(f"Took {-health_change} damage")
+
+                updates_made = True
+
+                # Log health change to memory graph
+                memory_graph = self.get_session_memory_graph(session.id)
+                if health_change > 0:
+                    memory_graph.add_node(
+                        content=f"Character healed for {health_change} health points",
+                        node_type="character",
+                        importance=0.6,
+                    )
+                else:
+                    memory_graph.add_node(
+                        content=f"Character took {abs(health_change)} damage",
+                        node_type="character",
+                        importance=0.7,
+                    )
+
+        # Save character state if updates were made
+        if updates_made:
+            character_service = CharacterService()
+            character_service.update_character(character)
+
+            # Add a combined update node if multiple changes occurred
+            if len(update_summary) > 1:
+                memory_graph = self.get_session_memory_graph(session.id)
+                memory_graph.add_node(
+                    content=f"Character updates: {', '.join(update_summary)}",
+                    node_type="character_update",
+                    importance=0.7,
+                )
+
+    def _process_combat_updates(self, function_args: Dict, session: "GameSession", character: Character):
+        """Process combat updates from the AI response."""
+        if "combat_updates" not in function_args or not isinstance(
+            function_args["combat_updates"], dict
+        ):
+            return
+
+        # Initialize combat state if not present or has incorrect structure
+        if not hasattr(session, "combat_state") or not isinstance(session.combat_state, dict):
+            session.combat_state = {"enemies": [], "round": 1}
+        if "enemies" not in session.combat_state:
+            session.combat_state["enemies"] = []
+        if "round" not in session.combat_state:
+            session.combat_state["round"] = 1
+
+        combat_updates = function_args["combat_updates"]
+
+        # Update enemies info
+        if "enemies" in combat_updates and isinstance(combat_updates["enemies"], list):
+            # Replace the entire enemy list for the combat state
+            session.combat_state["enemies"] = combat_updates["enemies"]
+
+        # Update combat round
+        if "round" in combat_updates and isinstance(combat_updates["round"], int):
+            session.combat_state["round"] = combat_updates["round"]
+
+        # Process player damage
+        if "player_damage_taken" in combat_updates and isinstance(combat_updates["player_damage_taken"], int):
+            damage = combat_updates["player_damage_taken"]
+            if damage > 0:
+                character.take_damage(damage)
+
+                # Log damage to memory graph
+                memory_graph = self.get_session_memory_graph(session.id)
+                memory_graph.add_node(
+                    content=f"Character took {damage} damage in combat",
+                    node_type="combat",
+                    importance=0.7,
+                )
+
+        # Always update the session with combat state changes
+        game_state_service = GameStateService()
+        game_state_service.update_session(session)
+
+    def _process_quest_updates(self, function_args: Dict, session: "GameSession"):
+        """Process quest updates from the AI response."""
+        if "quest_updates" not in function_args or not isinstance(
+            function_args["quest_updates"], dict
+        ):
+            return
+
+        quest_updates = function_args["quest_updates"]
+
+        # Initialize quest lists if not present
+        if not hasattr(session, "active_quests"):
+            session.active_quests = []
+        if not hasattr(session, "completed_quests"):
+            session.completed_quests = []
+
+        # Add new quests
+        if "new_quests" in quest_updates and isinstance(quest_updates["new_quests"], list):
+            for quest in quest_updates["new_quests"]:
+                if isinstance(quest, dict) and "id" in quest and "title" in quest:
+                    # Make sure the quest isn't already in active quests
+                    if not any(q.get("id") == quest["id"] for q in session.active_quests):
+                        # Ensure quest has all required fields
+                        if "description" not in quest:
+                            quest["description"] = ""
+                        if "objective" not in quest:
+                            quest["objective"] = ""
+                        if "reward" not in quest:
+                            quest["reward"] = ""
+
+                        session.active_quests.append(quest)
+
+                        # Add to memory graph
+                        memory_graph = self.get_session_memory_graph(session.id)
+                        memory_graph.add_node(
+                            content=f"Received quest: {quest['title']}",
+                            node_type="quest",
+                            importance=0.8,
+                        )
+
+        # Update existing quests
+        if "updated_quests" in quest_updates and isinstance(quest_updates["updated_quests"], list):
+            for update in quest_updates["updated_quests"]:
+                if isinstance(update, dict) and "id" in update:
+                    for i, quest in enumerate(session.active_quests):
+                        if quest.get("id") == update["id"]:
+                            # Make a safe copy of the quest to update
+                            updated_quest = quest.copy()
+
+                            # Update the quest with all fields from the update
+                            for key, value in update.items():
+                                updated_quest[key] = value
+
+                            # Ensure quest maintains required fields
+                            if "title" not in updated_quest and "title" in quest:
+                                updated_quest["title"] = quest["title"]
+                            if "description" not in updated_quest:
+                                updated_quest["description"] = quest.get("description", "")
+
+                            session.active_quests[i] = updated_quest
+
+                            # Add to memory if there's progress info
+                            if "progress" in update:
                                 memory_graph = self.get_session_memory_graph(session.id)
                                 memory_graph.add_node(
-                                    content=f"Character acquired item: {item['name']} ({item['type']})",
-                                    node_type="inventory",
+                                    content=f"Quest progress for {updated_quest.get('title', 'Unknown quest')}: {update['progress']}",
+                                    node_type="quest",
                                     importance=0.7,
                                 )
 
-                    # Process removed items
-                    if "removed_items" in inventory_changes and isinstance(
-                        inventory_changes["removed_items"], list
-                    ):
-                        for item_name in inventory_changes["removed_items"]:
-                            # Find the item in inventory
-                            item_to_remove = None
-                            for inv_item in character.inventory:
-                                if inv_item.get("name") == item_name:
-                                    item_to_remove = inv_item
-                                    break
+        # Complete quests
+        if "completed_quests" in quest_updates and isinstance(quest_updates["completed_quests"], list):
+            for quest_id in quest_updates["completed_quests"]:
+                for i, quest in enumerate(session.active_quests):
+                    if quest.get("id") == quest_id:
+                        # Move quest from active to completed
+                        completed_quest = session.active_quests.pop(i)
+                        session.completed_quests.append(completed_quest)
 
-                            # Remove the item if found
-                            if item_to_remove:
-                                character.remove_item(item_to_remove.get("id"))
+                        # Add to memory graph
+                        memory_graph = self.get_session_memory_graph(session.id)
+                        memory_graph.add_node(
+                            content=f"Completed quest: {completed_quest.get('title', 'Unknown quest')}",
+                            node_type="quest",
+                            importance=0.9,
+                        )
+                        break
 
-                                # Log item removal to memory graph
-                                memory_graph = self.get_session_memory_graph(session.id)
-                                memory_graph.add_node(
-                                    content=f"Character lost item: {item_name}",
-                                    node_type="inventory",
-                                    importance=0.6,
-                                )
+        # Update the session with quest changes
+        game_state_service = GameStateService()
+        game_state_service.update_session(session)
 
-                    # Track used items (no need to remove them)
-                    if "items_used" in inventory_changes and isinstance(
-                        inventory_changes["items_used"], list
-                    ):
-                        for item_name in inventory_changes["items_used"]:
-                            # Verify item exists in inventory
-                            item_exists = any(
-                                inv_item.get("name") == item_name
-                                for inv_item in character.inventory
-                            )
+    def _process_relationship_updates(self, function_args: Dict, session: "GameSession"):
+        """Process NPC relationship updates from the AI response."""
+        if "relationship_updates" not in function_args or not isinstance(
+            function_args["relationship_updates"], dict
+        ):
+            return
 
-                            if item_exists:
-                                # Log item usage to memory graph
-                                memory_graph = self.get_session_memory_graph(session.id)
-                                memory_graph.add_node(
-                                    content=f"Character used item: {item_name}",
-                                    node_type="inventory",
-                                    importance=0.5,
-                                )
+        rel_updates = function_args["relationship_updates"]
 
-                # Process character updates (XP, gold, health)
-                if "character_updates" in function_args and isinstance(
-                    function_args["character_updates"], dict
-                ):
-                    char_updates = function_args["character_updates"]
-                    updates_made = False
-                    update_summary = []
+        # Process NPC relationship changes
+        if "npc_relationships" in rel_updates and isinstance(rel_updates["npc_relationships"], list):
+            for npc_rel in rel_updates["npc_relationships"]:
+                if isinstance(npc_rel, dict) and "name" in npc_rel and "change" in npc_rel:
+                    npc_name = npc_rel["name"]
+                    change_value = npc_rel["change"]
+                    reason = npc_rel.get("reason", "Recent interaction")
 
-                    # Handle XP gains
-                    if "experience_gained" in char_updates and isinstance(
-                        char_updates["experience_gained"], int
-                    ):
-                        xp_gained = char_updates["experience_gained"]
-                        if xp_gained > 0:
-                            # Add XP and check for level up
-                            level_up = character.add_experience(xp_gained)
-                            updates_made = True
-                            update_summary.append(f"Gained {xp_gained} XP")
+                    # Update NPC relationships in session
+                    if not hasattr(session, "npc_relationships"):
+                        session.npc_relationships = {}
 
-                            # Log to memory graph
-                            memory_graph = self.get_session_memory_graph(session.id)
-                            if level_up:
-                                memory_graph.add_node(
-                                    content=f"Character gained {xp_gained} XP and leveled up to level {character.level}",
-                                    node_type="progression",
-                                    importance=0.9,  # Level ups are important milestones
-                                )
-                            else:
-                                memory_graph.add_node(
-                                    content=f"Character gained {xp_gained} XP",
-                                    node_type="progression",
-                                    importance=0.6,
-                                )
+                    if npc_name not in session.npc_relationships:
+                        session.npc_relationships[npc_name] = 0
 
-                    # Handle gold changes
-                    if "gold_gained" in char_updates and isinstance(
-                        char_updates["gold_gained"], int
-                    ):
-                        gold_gained = char_updates["gold_gained"]
-                        if gold_gained > 0:
-                            character.gold += gold_gained
-                            updates_made = True
-                            update_summary.append(f"Gained {gold_gained} gold")
+                    session.npc_relationships[npc_name] += change_value
 
-                            # Log to memory graph
-                            memory_graph = self.get_session_memory_graph(session.id)
-                            memory_graph.add_node(
-                                content=f"Character gained {gold_gained} gold",
-                                node_type="transaction",
-                                importance=0.5,
-                            )
+                    # Log relationship change to memory graph
+                    memory_graph = self.get_session_memory_graph(session.id)
+                    if change_value > 0:
+                        memory_graph.add_node(
+                            content=f"Relationship with {npc_name} improved by {change_value}: {reason}",
+                            node_type="relationship",
+                            importance=0.6,
+                        )
+                    else:
+                        memory_graph.add_node(
+                            content=f"Relationship with {npc_name} worsened by {abs(change_value)}: {reason}",
+                            node_type="relationship",
+                            importance=0.6,
+                        )
 
-                    if "gold_spent" in char_updates and isinstance(
-                        char_updates["gold_spent"], int
-                    ):
-                        gold_spent = char_updates["gold_spent"]
-                        if gold_spent > 0:
-                            # Only deduct if character has enough gold
-                            if character.gold >= gold_spent:
-                                character.gold -= gold_spent
-                                updates_made = True
-                                update_summary.append(f"Spent {gold_spent} gold")
+            # Persist relationship changes
+            game_state_service = GameStateService()
+            game_state_service.update_session(session)
 
-                                # Log to memory graph
-                                memory_graph = self.get_session_memory_graph(session.id)
-                                memory_graph.add_node(
-                                    content=f"Character spent {gold_spent} gold",
-                                    node_type="transaction",
-                                    importance=0.5,
-                                )
+    def _add_interaction_to_memory(self, session: "GameSession", character: Character, function_args: Dict):
+        """Add the current interaction to the memory graph."""
+        if not hasattr(session, "id"):
+            return
 
-                    # Handle health changes
-                    if "health_change" in char_updates and isinstance(
-                        char_updates["health_change"], int
-                    ):
-                        health_change = char_updates["health_change"]
-                        if health_change > 0:
-                            # Healing
-                            character.heal(health_change)
-                            updates_made = True
-                            update_summary.append(f"Healed {health_change} HP")
-                        elif health_change < 0:
-                            # Damage
-                            character.take_damage(
-                                -health_change
-                            )  # Convert to positive for take_damage
-                            updates_made = True
-                            update_summary.append(f"Took {-health_change} damage")
+        memory_graph = self.get_session_memory_graph(session.id)
 
-                    # If any updates were made, save the character
-                    if updates_made:
-                        from app.services.character_service import CharacterService
+        # Create a summary of the interaction
+        interaction_summary = function_args.get("message", "")
+        if len(interaction_summary) > 300:
+            interaction_summary = interaction_summary[:297] + "..."
 
-                        character_service = CharacterService()
-                        character_service.update_character(character)
+        # Determine importance based on content
+        importance = 0.5  # Default importance
 
-                        # Add a combined update node if multiple changes occurred
-                        if len(update_summary) > 1:
-                            memory_graph = self.get_session_memory_graph(session.id)
-                            memory_graph.add_node(
-                                content=f"Character updates: {', '.join(update_summary)}",
-                                node_type="character_update",
-                                importance=0.7,
-                            )
+        # Detect if this is an important event (quest, combat, etc.)
+        important_keywords = ["quest", "mission", "battle", "fight", "found", "discovered", "treasure", "secret"]
+        if any(keyword in interaction_summary.lower() for keyword in important_keywords):
+            importance = 0.8
 
-                # Process relationship updates if present
-                if "relationship_updates" in function_args and isinstance(
-                    function_args["relationship_updates"], dict
-                ):
-                    rel_updates = function_args["relationship_updates"]
-                    
-                    # Process NPC relationship changes
-                    if "npc_relationships" in rel_updates and isinstance(
-                        rel_updates["npc_relationships"], list
-                    ):
-                        for npc_rel in rel_updates["npc_relationships"]:
-                            if isinstance(npc_rel, dict) and "name" in npc_rel and "change" in npc_rel:
-                                npc_name = npc_rel["name"]
-                                relation_change = npc_rel["change"]
-                                reason = npc_rel.get("reason", "Recent interaction")
-                                
-                                # Log relationship change to memory graph
-                                memory_graph = self.get_session_memory_graph(session.id)
-                                memory_graph.add_node(
-                                    content=f"Relationship with {npc_name} changed by {relation_change}. Reason: {reason}",
-                                    node_type="relationship",
-                                    importance=0.8,
-                                )
-                                
-                # Process combat updates if in combat
-                if "combat_updates" in function_args and session.in_combat:
-                    combat_updates = function_args["combat_updates"]
-                    
-                    # Update enemy states
-                    if "enemies" in combat_updates and isinstance(combat_updates["enemies"], list):
-                        session.combat_state["enemies"] = combat_updates["enemies"]
-                    
-                    # Update combat round
-                    if "round" in combat_updates and isinstance(combat_updates["round"], int):
-                        session.combat_state["round"] = combat_updates["round"]
-                    
-                    # Apply damage to player if specified
-                    if "player_damage_taken" in combat_updates and isinstance(combat_updates["player_damage_taken"], int):
-                        damage = combat_updates["player_damage_taken"]
-                        if damage > 0:
-                            character.take_damage(damage)
-                            
-                            # Log combat damage to memory graph
-                            memory_graph = self.get_session_memory_graph(session.id)
-                            memory_graph.add_node(
-                                content=f"Character took {damage} damage in combat",
-                                node_type="combat",
-                                importance=0.7,
-                            )
-                    
-                    # Persist combat state changes
-                    from app.services.game_state_service import GameStateService
-                    game_state_service = GameStateService()
-                    game_state_service.update_session(session)
-                    
-                    # If combat is over, check if it should be ended
-                    if "combat_ended" in combat_updates and combat_updates["combat_ended"]:
-                        session.in_combat = False
-                        session.combat_state = None
-                        
-                # Process quest updates
-                if "quest_updates" in function_args and isinstance(function_args["quest_updates"], dict):
-                    quest_updates = function_args["quest_updates"]
-                    
-                    # Handle new quests
-                    if "new_quests" in quest_updates and isinstance(quest_updates["new_quests"], list):
-                        for quest in quest_updates["new_quests"]:
-                            # Support both 'name' and 'title' fields for quests
-                            quest_name = quest.get("name") or quest.get("title")
-                            if isinstance(quest, dict) and quest_name and "description" in quest:
-                                # Generate a unique ID for the quest
-                                import uuid
-                                quest_id = str(uuid.uuid4())
-                                
-                                # Add additional fields if not present
-                                if "objectives" not in quest:
-                                    quest["objectives"] = ["Complete the quest"]
-                                    
-                                if "reward" not in quest:
-                                    quest["reward"] = {"experience": 50, "gold": 25}
-                                    
-                                # Create complete quest object
-                                new_quest = {
-                                    "id": quest.get("id", quest_id),
-                                    "title": quest_name,
-                                    "description": quest["description"],
-                                    "objectives": quest.get("objectives", ["Complete the quest"]),
-                                    "reward": quest.get("reward", {"experience": 50, "gold": 25}),
-                                    "complete": False,
-                                    "progress": 0
-                                }
-                                
-                                # Add to active quests
-                                if not hasattr(session, "active_quests") or session.active_quests is None:
-                                    session.active_quests = []
-                                    
-                                session.active_quests.append(new_quest)
-                                
-                                # Log quest addition to memory graph
-                                memory_graph = self.get_session_memory_graph(session.id)
-                                memory_graph.add_node(
-                                    content=f"Started new quest: {quest_name} - {quest['description']}",
-                                    node_type="quest",
-                                    importance=0.9,
-                                )
-                    
-                    # Handle completed quests
-                    if "completed_quests" in quest_updates and isinstance(quest_updates["completed_quests"], list):
-                        if not hasattr(session, "completed_quests") or session.completed_quests is None:
-                            session.completed_quests = []
-                            
-                        for quest_id in quest_updates["completed_quests"]:
-                            # Find the quest in active quests by ID
-                            if hasattr(session, "active_quests") and session.active_quests:
-                                for i, quest in enumerate(session.active_quests):
-                                    if quest.get("id") == quest_id:
-                                        # Mark as complete
-                                        quest["complete"] = True
-                                        
-                                        # Move to completed quests
-                                        session.completed_quests.append(quest)
-                                        session.active_quests.pop(i)
-                                        
-                                        # Log to memory graph
-                                        memory_graph = self.get_session_memory_graph(session.id)
-                                        memory_graph.add_node(
-                                            content=f"Completed quest: {quest.get('title')}",
-                                            node_type="quest",
-                                            importance=0.9,
-                                        )
-                                        break
-                                        
-                    # Handle updated quests
-                    if "updated_quests" in quest_updates and isinstance(quest_updates["updated_quests"], list):
-                        for quest_update in quest_updates["updated_quests"]:
-                            if isinstance(quest_update, dict) and "id" in quest_update:
-                                quest_id = quest_update["id"]
-                                
-                                # Find the quest in active quests by ID
-                                if hasattr(session, "active_quests") and session.active_quests:
-                                    for quest in session.active_quests:
-                                        if quest.get("id") == quest_id:
-                                            # Update progress if specified
-                                            if "progress" in quest_update:
-                                                quest["progress"] = quest_update["progress"]
-                                                
-                                                # Log to memory graph
-                                                memory_graph = self.get_session_memory_graph(session.id)
-                                                memory_graph.add_node(
-                                                    content=f"Quest progress: {quest.get('title')} - {quest_update['progress']}",
-                                                    node_type="quest",
-                                                    importance=0.7,
-                                                )
-                                            break
-                    
-                    # Handle quest progress updates
-                    if "quest_progress" in quest_updates and isinstance(quest_updates["quest_progress"], list):
-                        for progress in quest_updates["quest_progress"]:
-                            if isinstance(progress, dict) and "name" in progress and "progress" in progress:
-                                quest_name = progress["name"]
-                                progress_value = progress["progress"]
-                                
-                                # Find the quest by name
-                                if hasattr(session, "active_quests") and session.active_quests:
-                                    for quest in session.active_quests:
-                                        if quest["name"] == quest_name:
-                                            quest["progress"] = progress_value
-                                            
-                                            # Check if quest is now complete
-                                            if progress_value >= 100:
-                                                quest["complete"] = True
-                                                
-                                                # Award quest rewards
-                                                if "reward" in quest:
-                                                    if "experience" in quest["reward"]:
-                                                        xp = quest["reward"]["experience"]
-                                                        character.add_experience(xp)
-                                                        
-                                                    if "gold" in quest["reward"]:
-                                                        gold = quest["reward"]["gold"]
-                                                        character.gold += gold
-                                            
-                                            # Log quest progress to memory graph
-                                            memory_graph = self.get_session_memory_graph(session.id)
-                                            if quest["complete"]:
-                                                memory_graph.add_node(
-                                                    content=f"Completed quest: {quest_name}",
-                                                    node_type="quest",
-                                                    importance=0.9,
-                                                )
-                                            else:
-                                                memory_graph.add_node(
-                                                    content=f"Quest progress: {quest_name} - {progress_value}%",
-                                                    node_type="quest",
-                                                    importance=0.7,
-                                                )
-                                            
-                                            break
-                    
-                    # Persist quest updates
-                    from app.services.game_state_service import GameStateService
-                    game_state_service = GameStateService()
-                    game_state_service.update_session(session)
-                
-                # Set the final response text to the message portion
-                if "message" in function_args:
-                    response = function_args["message"]
-                else:
-                    # Fallback if message not found
-                    response = "I don't understand what you mean. Please try again."
-            else:
-                # Fallback if function wasn't called - try to parse direct content
-                response_text = response.choices[0].message.content
-                try:
-                    parsed_response = json.loads(response_text)
-                    if "message" in parsed_response:
-                        response = parsed_response["message"]
-                    # Handle location changes
-                    if "location" in parsed_response and parsed_response[
-                        "location"
-                    ].get("location_changed", False):
-                        session.current_location = {
-                            "name": parsed_response["location"]["name"],
-                            "description": parsed_response["location"]["description"],
-                        }
-                        # Persist the location change to storage
-                        from app.services.game_state_service import GameStateService
+        # Add this interaction to memory
+        memory_graph.add_node(
+            content=interaction_summary,
+            node_type="interaction",
+            importance=importance,
+        )
 
-                        game_state_service = GameStateService()
-                        game_state_service.update_session(session)
-
-                    # Handle inventory changes for fallback path
-                    if "inventory_changes" in parsed_response and isinstance(
-                        parsed_response["inventory_changes"], dict
-                    ):
-                        inventory_changes = parsed_response["inventory_changes"]
-
-                        # Process added items
-                        if "added_items" in inventory_changes and isinstance(
-                            inventory_changes["added_items"], list
-                        ):
-                            for item in inventory_changes["added_items"]:
-                                if (
-                                    isinstance(item, dict)
-                                    and "name" in item
-                                    and "type" in item
-                                ):
-                                    # Generate a unique ID for the item
-                                    import uuid
-
-                                    item_id = str(uuid.uuid4())
-
-                                    # Create a complete item object
-                                    new_item = {
-                                        "id": item_id,
-                                        "name": item["name"],
-                                        "type": item["type"],
-                                        "description": item.get(
-                                            "description", f"A {item['type']}."
-                                        ),
-                                    }
-
-                                    # Add to character inventory
-                                    character.add_item(new_item)
-
-                                    # Log item addition to memory graph
-                                    memory_graph = self.get_session_memory_graph(
-                                        session.id
-                                    )
-                                    memory_graph.add_node(
-                                        content=f"Character acquired item: {item['name']} ({item['type']})",
-                                        node_type="inventory",
-                                        importance=0.7,
-                                    )
-
-                        # Process removed items
-                        if "removed_items" in inventory_changes and isinstance(
-                            inventory_changes["removed_items"], list
-                        ):
-                            for item_name in inventory_changes["removed_items"]:
-                                # Find the item in inventory
-                                item_to_remove = None
-                                for inv_item in character.inventory:
-                                    if inv_item.get("name") == item_name:
-                                        item_to_remove = inv_item
-                                        break
-
-                                # Remove the item if found
-                                if item_to_remove:
-                                    character.remove_item(item_to_remove.get("id"))
-
-                                    # Log item removal to memory graph
-                                    memory_graph = self.get_session_memory_graph(
-                                        session.id
-                                    )
-                                    memory_graph.add_node(
-                                        content=f"Character lost item: {item_name}",
-                                        node_type="inventory",
-                                        importance=0.6,
-                                    )
-
-                        # Track used items (no need to remove them)
-                        if "items_used" in inventory_changes and isinstance(
-                            inventory_changes["items_used"], list
-                        ):
-                            for item_name in inventory_changes["items_used"]:
-                                # Verify item exists in inventory
-                                item_exists = any(
-                                    inv_item.get("name") == item_name
-                                    for inv_item in character.inventory
-                                )
-
-                                if item_exists:
-                                    # Log item usage to memory graph
-                                    memory_graph = self.get_session_memory_graph(
-                                        session.id
-                                    )
-                                    memory_graph.add_node(
-                                        content=f"Character used item: {item_name}",
-                                        node_type="inventory",
-                                        importance=0.5,
-                                    )
-
-                        # Save character changes
-                        from app.services.character_service import CharacterService
-
-                        character_service = CharacterService()
-                        character_service.update_character(character)
-
-                    # Process relationship updates for fallback path
-                    if "relationship_updates" in parsed_response and isinstance(
-                        parsed_response["relationship_updates"], dict
-                    ):
-                        rel_updates = parsed_response["relationship_updates"]
-                        
-                        # Process NPC relationship changes
-                        if "npc_relationships" in rel_updates and isinstance(
-                            rel_updates["npc_relationships"], list
-                        ):
-                            for npc_rel in rel_updates["npc_relationships"]:
-                                if isinstance(npc_rel, dict) and "name" in npc_rel and "change" in npc_rel:
-                                    npc_name = npc_rel["name"]
-                                    relation_change = npc_rel["change"]
-                                    reason = npc_rel.get("reason", "Recent interaction")
-                                    
-                                    # Log relationship change to memory graph
-                                    memory_graph = self.get_session_memory_graph(session.id)
-                                    memory_graph.add_node(
-                                        content=f"Relationship with {npc_name} changed by {relation_change}. Reason: {reason}",
-                                        node_type="relationship",
-                                        importance=0.8,
-                                    )
-
-                    # Process character updates for fallback path
-                    if "character_updates" in parsed_response and isinstance(
-                        parsed_response["character_updates"], dict
-                    ):
-                        char_updates = parsed_response["character_updates"]
-                        updates_made = False
-                        update_summary = []
-
-                        # Handle XP gains
-                        if "experience_gained" in char_updates and isinstance(
-                            char_updates["experience_gained"], int
-                        ):
-                            xp_gained = char_updates["experience_gained"]
-                            if xp_gained > 0:
-                                # Add XP and check for level up
-                                level_up = character.add_experience(xp_gained)
-                                updates_made = True
-                                update_summary.append(f"Gained {xp_gained} XP")
-
-                                # Log to memory graph
-                                memory_graph = self.get_session_memory_graph(session.id)
-                                if level_up:
-                                    memory_graph.add_node(
-                                        content=f"Character gained {xp_gained} XP and leveled up to level {character.level}",
-                                        node_type="progression",
-                                        importance=0.9,
-                                    )
-                                else:
-                                    memory_graph.add_node(
-                                        content=f"Character gained {xp_gained} XP",
-                                        node_type="progression",
-                                        importance=0.6,
-                                    )
-
-                        # Handle gold changes
-                        if "gold_gained" in char_updates and isinstance(
-                            char_updates["gold_gained"], int
-                        ):
-                            gold_gained = char_updates["gold_gained"]
-                            if gold_gained > 0:
-                                character.gold += gold_gained
-                                updates_made = True
-                                update_summary.append(f"Gained {gold_gained} gold")
-
-                        if "gold_spent" in char_updates and isinstance(
-                            char_updates["gold_spent"], int
-                        ):
-                            gold_spent = char_updates["gold_spent"]
-                            if gold_spent > 0 and character.gold >= gold_spent:
-                                character.gold -= gold_spent
-                                updates_made = True
-                                update_summary.append(f"Spent {gold_spent} gold")
-
-                        # Handle health changes
-                        if "health_change" in char_updates and isinstance(
-                            char_updates["health_change"], int
-                        ):
-                            health_change = char_updates["health_change"]
-                            if health_change > 0:
-                                character.heal(health_change)
-                                updates_made = True
-                                update_summary.append(f"Healed {health_change} HP")
-                            elif health_change < 0:
-                                character.take_damage(-health_change)
-                                updates_made = True
-                                update_summary.append(f"Took {-health_change} damage")
-
-                        # Save character if updates were made
-                        if updates_made:
-                            character_service = CharacterService()
-                            character_service.update_character(character)
-                except json.JSONDecodeError:
-                    # If not JSON, just use the raw response
-                    response = response_text
-
-        except Exception as e:
-            print(f"Error parsing response: {e}")
-            # Fallback to standard processing
-            response = self.get_ai_response(messages, session_id=session.id)
-
-        # Store player action and GM response in memory graph
-        if hasattr(session, "id"):
-            memory_content = f"""Location: {session.current_location.get("name")}
-            
-            Player action: {action}
-            
-            Game Master response: {response}
-            """
-
-            # Add memory node for this interaction
-            memory_graph = self.get_session_memory_graph(session.id)
-            memory_graph.add_node(
-                content=memory_content, node_type="event", importance=importance
-            )
-
-            # Check for potential character or location memories to create
-            if any(
-                loc_word in action.lower()
-                for loc_word in ["place", "area", "room", "location"]
-            ):
-                # This might be a significant location description
-                location_content = f"""Location: {session.current_location.get("name")}
-                Description: {session.current_location.get("description")}
-                Discovered during action: {action}
-                """
-                memory_graph.add_node(
-                    content=location_content, node_type="location", importance=0.7
-                )
-
-            # Check for character interactions
-            for npc in npcs_present:
-                if npc.get("name", "").lower() in action.lower():
-                    npc_content = f"""Character: {npc.get("name")}
-                    Type: {npc.get("type")}
-                    Description: {npc.get("description")}
-                    Interaction: {action}
-                    """
-                    memory_graph.add_node(
-                        content=npc_content, node_type="character", importance=0.7
-                    )
-
-            # Save memory graph periodically (every ~5 actions)
-            if random.random() < 0.2:  # 20% chance to save
-                memory_graph.save()
-
-        return response
+        # Save the memory graph
+        memory_graph.save()
 
     def generate_npc(self, npc_type: str, location: str) -> NPC:
         """Generate a new NPC.
