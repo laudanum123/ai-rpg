@@ -197,6 +197,7 @@ class GameStateService:
             "completed_quests": session.completed_quests,
             "in_combat": session.in_combat,
             "combat_state": session.combat_state,
+            "intro_generated": session.intro_generated
         }
 
         with open(session_path, "w") as f:

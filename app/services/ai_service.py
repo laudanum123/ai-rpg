@@ -92,7 +92,33 @@ class AIService:
                     ]
                 }
                 debug_entry["session_id"] = session_id
-                debug_entry["request"]["messages"] = final_messages
+                
+                # Format final_messages properly for the debug UI
+                # This is crucial to avoid character-by-character display issues
+                formatted_final_messages = []
+                for msg in final_messages:
+                    # Ensure each message is properly formatted
+                    formatted_msg = {}
+                    
+                    # Extract role and ensure it's a string
+                    if isinstance(msg, dict):
+                        formatted_msg["role"] = str(msg.get("role", "unknown"))
+                        
+                        # Extract content and ensure it's a simple string
+                        content = msg.get("content", "")
+                        if isinstance(content, str):
+                            formatted_msg["content"] = content
+                        else:
+                            formatted_msg["content"] = str(content)
+                    else:
+                        # Handle non-dict messages
+                        formatted_msg["role"] = "unknown"
+                        formatted_msg["content"] = str(msg)
+                    
+                    formatted_final_messages.append(formatted_msg)
+                
+                # Assign the properly formatted messages to the debug entry
+                debug_entry["request"]["messages"] = formatted_final_messages
 
                 # Add to debug logs
                 if self.api_debug_logs is not None:
@@ -127,14 +153,35 @@ class AIService:
         # Extract the current situation from the latest user message
         current_situation = self._extract_current_situation(messages)
 
-        # Get memory context if we have a session ID
-        memory_context = self._get_memory_context(session_id, current_situation, memory_graph)
-
-        # Create the system message with memory context
+        # Get memory context if we have a session ID - but as a plain string without special formatting
+        memory_context = ""
+        if session_id and current_situation and memory_graph is not None:
+            # Get the memory context directly without going through _get_memory_context
+            try:
+                # Get raw memory nodes
+                raw_context = memory_graph.get_relevant_context(
+                    current_situation, node_limit=10, max_tokens=10000
+                )
+                
+                # Clean the memory context to prevent formatting issues
+                if raw_context and raw_context != "No relevant memories found.":
+                    memory_context = raw_context
+            except Exception as e:
+                print(f"Error getting memory context: {str(e)}")
+                memory_context = ""
+        
+        # Build the system message content carefully
+        system_content = self.system_prompt
+        if memory_context:
+            # Use a simple format without JSON-unfriendly characters
+            memory_prefix = " Relevant Memory Context: "
+            system_content = system_content + memory_prefix + memory_context
+        
+        # Create the system message with properly formatted memory context
         final_messages = [
             {
                 "role": "system",
-                "content": self.system_prompt + (f"\n\nRelevant game history:\n{memory_context}" if memory_context else ""),
+                "content": system_content,
             }
         ]
 
@@ -248,8 +295,30 @@ class AIService:
             else:
                 # Fallback if no user message found
                 prompt_content = str(messages)
-            # Use the original message list for formatted display
-            formatted_messages = messages
+            
+            # Create properly formatted messages for the debug UI
+            formatted_messages = []
+            for msg in messages:
+                # Ensure each message is a proper dictionary for the debug UI
+                # Don't use the raw message object as it may be something unexpected
+                formatted_msg = {}
+                
+                # Add required fields in the expected format
+                if isinstance(msg, dict):
+                    formatted_msg["role"] = str(msg.get("role", "unknown"))
+                    
+                    # Ensure content is a simple string, not a complex object
+                    content = msg.get("content", "")
+                    if isinstance(content, str):
+                        formatted_msg["content"] = content
+                    else:
+                        formatted_msg["content"] = str(content)
+                else:
+                    # If message is not a dict, convert to a standard format
+                    formatted_msg["role"] = "unknown"
+                    formatted_msg["content"] = str(msg)
+                
+                formatted_messages.append(formatted_msg)
         else:
             # Fallback for any other case
             prompt_content = str(messages)
@@ -414,15 +483,51 @@ class AIService:
 
             # If debugging, store the response
             if debug_entry is not None:
+                # Format message data properly for the debug UI
+                formatted_messages = []
+                for msg in messages:
+                    # Ensure each message is properly formatted
+                    formatted_msg = {}
+                    
+                    # Extract role and ensure it's a string
+                    if isinstance(msg, dict):
+                        formatted_msg["role"] = str(msg.get("role", "unknown"))
+                        
+                        # Extract content and ensure it's a simple string
+                        content = msg.get("content", "")
+                        if isinstance(content, str):
+                            formatted_msg["content"] = content
+                        else:
+                            formatted_msg["content"] = str(content)
+                    else:
+                        # Handle non-dict messages
+                        formatted_msg["role"] = "unknown"
+                        formatted_msg["content"] = str(msg)
+                    
+                    formatted_messages.append(formatted_msg)
+                
+                # Make sure debug_entry has all the required fields for the debug UI template
+                if "request" not in debug_entry:
+                    debug_entry["request"] = {}
+                
+                debug_entry["request"]["messages"] = formatted_messages
+                debug_entry["request"]["temperature"] = temperature
+                debug_entry["request"]["max_tokens"] = max_tokens
+                debug_entry["request"]["model"] = model_name
+                
+                # Format the response to match what debug.html expects
                 debug_entry["response"] = {
                     "choices": [
                         {
                             "message": {
-                                "content": text_response
+                                "content": text_response,
+                                "role": "assistant"  # Add the role which was missing
                             }
                         }
                     ]
                 }
+                
+                # Add the debug entry to the logs
                 self.api_debug_logs.append(debug_entry)
 
             return function_args, text_response
@@ -430,6 +535,11 @@ class AIService:
             logging.error(f"Error calling OpenAI API: {str(e)}")
 
             if debug_entry is not None:
+                # Make sure debug_entry has all the required fields for the debug UI template
+                if "request" not in debug_entry:
+                    debug_entry["request"] = {}
+                
+                # Add properly formatted error information
                 debug_entry["error"] = str(e)
                 self.api_debug_logs.append(debug_entry)
 

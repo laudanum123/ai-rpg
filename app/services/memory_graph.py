@@ -339,13 +339,17 @@ Output ONLY the relationship lines, nothing else. If no relationships exist, out
                 # Use summary instead of full content if we're approaching the limit
                 summary_tokens = len(node.summary.split()) * 1.3
                 if total_tokens + summary_tokens <= max_tokens:
-                    memory_text = f"Memory [{node.metadata['type']}]: {node.summary}"
+                    # Format for clean display in debug UI - replace newlines with spaces
+                    clean_summary = node.summary.replace("\n", " ")
+                    memory_text = f"Memory [{node.metadata['type']}]: {clean_summary}"
                     token_estimate = summary_tokens
                 else:
                     # Skip if even summary would exceed the limit
                     continue
             else:
-                memory_text = f"Memory [{node.metadata['type']}]: {node.content}"
+                # Format for clean display in debug UI - replace newlines with spaces
+                clean_content = node.content.replace("\n", " ")
+                memory_text = f"Memory [{node.metadata['type']}]: {clean_content}"
                 token_estimate = node_tokens
 
             context_parts.append(memory_text)
@@ -354,7 +358,8 @@ Output ONLY the relationship lines, nothing else. If no relationships exist, out
         if not context_parts:
             return "No relevant memories found."
 
-        return "\n\n".join(context_parts)
+        # Join context parts with a separator that works well for display
+        return " | ".join(context_parts)
 
     def _save_node(self, node: MemoryNode) -> None:
         """Save a node to disk."""

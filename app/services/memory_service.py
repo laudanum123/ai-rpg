@@ -140,7 +140,7 @@ class MemoryService:
 
         if relevant_context:
             # Create a memory context message
-            memory_context = "\n\n**Relevant Memory Context:**\n" + "\n".join(relevant_context)  # noqa: E501
+            memory_context = "\n\n**Relevant Memory Context:**\n" + relevant_context
 
             # Find the system message to append memory context to
             for i, msg in enumerate(messages):

@@ -358,7 +358,7 @@ def debug():
                     "response": "This is a test debug entry to verify logging works.",
                 }
                 game_master.api_debug_logs.append(test_entry)
-                print(f"Added test entry to debug logs")
+                print("Added test entry to debug logs")
 
             status = "enabled" if debug_status else "disabled"
             flash(f"API debug mode {status}")

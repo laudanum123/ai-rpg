@@ -21,6 +21,7 @@ class GameSession:
     completed_quests: List[Dict] = field(default_factory=list)
     in_combat: bool = False
     combat_state: Optional[Dict] = None
+    intro_generated: bool = False
 
     def to_dict(self) -> Dict:
         """Convert session to dictionary."""
@@ -40,6 +41,7 @@ class GameSession:
             "completed_quests": self.completed_quests,
             "in_combat": self.in_combat,
             "combat_state": self.combat_state,
+            "intro_generated": self.intro_generated
         }
 
         # Add any custom attributes that aren't part of the dataclass fields
